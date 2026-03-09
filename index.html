@@ -404,41 +404,40 @@
       accentGfx.strokeRoundedRect(8, 6, width - 16, 112, 14);
 
       this.roundText = null;
-      this.add.text(width / 2, 18, 'TAP', { fontSize: '15px', fontFamily: 'Arial Black', color: '#8899cc' }).setOrigin(0.5);
-      this.ruleNotText = this.add.text(width / 2, 52, 'NOT', {
+      this.add.text(width / 2, 26, 'TAP', { fontSize: '18px', fontFamily: 'Arial Black', color: '#99aadd' }).setOrigin(0.5);
+      this.ruleNotText = this.add.text(width / 2, 62, 'NOT', {
         fontSize: '32px', fontFamily: 'Arial Black', color: '#ff3333',
         stroke: '#000000', strokeThickness: 4
       }).setOrigin(0.5);
-      this.ruleCondText = this.add.text(width / 2, 88, '', {
+      this.ruleCondText = this.add.text(width / 2, 95, '', {
         fontSize: '16px', fontFamily: 'Arial Black', color: '#ffffff',
         align: 'center', wordWrap: { width: width * 0.86 },
         stroke: '#000033', strokeThickness: 2
       }).setOrigin(0.5);
 
-      // ---- Bottom layout (last 140px of 710px canvas) ----
-      // Timer bar at y=570
-      this.timerBar = this.add.rectangle(0, 570, 0, 6, 0x00ff88).setOrigin(0, 0.5);
+      // ---- Bottom layout (height-relative) ----
+      this.timerBar = this.add.rectangle(0, height - 140, 0, 6, 0x00ff88).setOrigin(0, 0.5);
       this.timerTween = null;
 
       // Score bar background with gradient
       const scoreGfx = this.add.graphics();
       scoreGfx.fillGradientStyle(0x050510, 0x050510, 0x0a0a20, 0x0a0a20, 1);
-      scoreGfx.fillRect(0, 572, width, 56);
+      scoreGfx.fillRect(0, height - 138, width, 56);
       scoreGfx.lineStyle(1, 0x223366, 0.8);
-      scoreGfx.lineBetween(0, 572, width, 572);
+      scoreGfx.lineBetween(0, height - 138, width, height - 138);
 
-      this.scoreText = this.add.text(60, 597, '0', { fontSize: '30px', fontFamily: 'Arial Black', color: '#ffffff' }).setOrigin(0.5);
-      this.add.text(60, 618, 'SCORE', { fontSize: '10px', fontFamily: 'Arial Black', color: '#334466', letterSpacing: 2 }).setOrigin(0.5);
-      this.comboText = this.add.text(width / 2, 600, '', { fontSize: '17px', fontFamily: 'Arial Black', color: '#ffdd00' }).setOrigin(0.5);
-      this.levelText = this.add.text(width - 60, 592, 'Lv.1', { fontSize: '16px', fontFamily: 'Arial Black', color: '#88ccff' }).setOrigin(0.5);
-      this.livesText = this.add.text(width - 60, 612, '❤️❤️❤️', { fontSize: '14px' }).setOrigin(0.5);
+      this.scoreText = this.add.text(60, height - 113, '0', { fontSize: '30px', fontFamily: 'Arial Black', color: '#ffffff' }).setOrigin(0.5);
+      this.add.text(60, height - 92, 'SCORE', { fontSize: '10px', fontFamily: 'Arial Black', color: '#334466', letterSpacing: 2 }).setOrigin(0.5);
+      this.comboText = this.add.text(width / 2, height - 110, '', { fontSize: '17px', fontFamily: 'Arial Black', color: '#ffdd00' }).setOrigin(0.5);
+      this.levelText = this.add.text(width - 60, height - 118, 'Lv.1', { fontSize: '16px', fontFamily: 'Arial Black', color: '#88ccff' }).setOrigin(0.5);
+      this.livesText = this.add.text(width - 60, height - 98, '❤️❤️❤️', { fontSize: '14px' }).setOrigin(0.5);
 
       // Power-up bar
       const puGfx = this.add.graphics();
       puGfx.fillGradientStyle(0x0a0520, 0x0a0520, 0x150830, 0x150830, 1);
-      puGfx.fillRect(0, 629, width, 81);
+      puGfx.fillRect(0, height - 81, width, 81);
       puGfx.lineStyle(1, 0x4422aa, 0.6);
-      puGfx.lineBetween(0, 629, width, 629);
+      puGfx.lineBetween(0, height - 81, width, height - 81);
 
       const puDefs = [
         { key: 'slowmo',     icon: '🐢', label: 'SLOW' },
@@ -448,7 +447,7 @@
       this.puBtns = {};
       puDefs.forEach((def, i) => {
         const x = Math.round(width / 4 + i * (width / 3.2));
-        const cont = this.add.container(x, 664).setDepth(30);
+        const cont = this.add.container(x, height - 46).setDepth(30);
         const bg   = this.add.graphics();
         bg.fillStyle(0x1e0a44, 1);
         bg.fillRoundedRect(-38, -28, 76, 56, 10);
@@ -698,7 +697,7 @@
     spawnObjects(objects) {
       const { W, H } = this;
       const areaTop    = H * 0.205;
-      const areaBottom = 558;
+      const areaBottom = height - 152;
       const areaLeft   = W * 0.05;
       const areaRight  = W * 0.95;
 
@@ -894,9 +893,23 @@
       this.updateLivesUI();
 
       this.tweens.add({ targets: container, scaleX: 0.3, scaleY: 0.3, alpha: 0, duration: 200, ease: 'Power2' });
-      this.flashScreen(0xff0000, 0.55);
+      this.flashScreen(0xff0000, 0.60);
       SFX.wrong();
-      if (navigator.vibrate) navigator.vibrate([80, 40, 80]);
+      if (navigator.vibrate) navigator.vibrate([100, 30, 100, 30, 150]);
+
+      // "NOT THAT ONE!" dramatic popup
+      const nto = this.add.text(this.W / 2, this.H / 2 - 40, 'NOT\nTHAT ONE!', {
+        fontSize: '52px', fontFamily: 'Arial Black',
+        color: '#ff2222', stroke: '#000000', strokeThickness: 8,
+        align: 'center'
+      }).setOrigin(0.5).setDepth(30).setAlpha(0).setScale(0.2);
+      this.tweens.add({
+        targets: nto, alpha: 1, scaleX: 1, scaleY: 1, duration: 180, ease: 'Back.easeOut',
+        onComplete: () => this.time.delayedCall(550, () => {
+          this.tweens.add({ targets: nto, alpha: 0, scaleX: 1.4, scaleY: 1.4, duration: 250, onComplete: () => nto.destroy() });
+        })
+      });
+
       this.highlightCorrectObjects();
 
       if (this.lives <= 0) {
@@ -1034,8 +1047,8 @@
 
     showAchievement(text, color) {
       // Show just above the timer bar (bottom of game area) so it never covers the rule
-      const startY = 545;
-      const endY   = 520;
+      const startY = this.H - 165;
+      const endY   = this.H - 190;
       const bg = this.add.rectangle(this.W / 2, startY, this.W * 0.78, 40, 0x000000, 0.88)
         .setStrokeStyle(2, Phaser.Display.Color.HexStringToColor(color).color)
         .setDepth(60).setAlpha(0);
@@ -1554,7 +1567,7 @@
   new Phaser.Game({
     type: Phaser.AUTO,
     width: 400,
-    height: 710,
+    height: 800,
     backgroundColor: '#1a1a2e',
     parent: document.body,
     resolution: window.devicePixelRatio || 1,
