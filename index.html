@@ -395,7 +395,7 @@
       accentGfx.lineStyle(3, 0x66aaff, 0.7);
       accentGfx.strokeRoundedRect(8, 6, width - 16, 96, 14);
 
-      this.roundText = this.add.text(width - 18, 18, 'Round 1', { fontSize: '11px', fontFamily: 'Arial', color: '#445599' }).setOrigin(1, 0);
+      this.roundText = null;
       this.ruleText = this.add.text(width / 2, height * 0.108, '', {
         fontSize: '24px', fontFamily: 'Arial Black, sans-serif',
         color: '#ffffff', align: 'center', wordWrap: { width: width * 0.90 },
@@ -581,7 +581,6 @@
       this.canTap = false;
       this.bonusMultiplier = 1;
       this.roundNumber++;
-      if (this.roundText) this.roundText.setText(`Round ${this.roundNumber}`);
 
       // Special round detection (never on round 0)
       const isBonus = this.roundsPlayed > 0 && this.roundsPlayed % 7 === 0;
@@ -631,13 +630,13 @@
     }
 
     startBonusRound() {
-      this.showRoundBanner('⚡ BONUS ROUND! ⚡\n5x POINTS', '#ffdd00', () => {
+      this.showRoundBanner('⚡ BONUS ROUND!', '#ffdd00', () => {
         this._launchRound({ timeOverride: 2800, bonusMult: 5 });
       });
     }
 
     startChaosRound() {
-      this.showRoundBanner('CHAOS\nROUND! 🌀', '#ff44ff', () => {
+      this.showRoundBanner('🌀 CHAOS ROUND!', '#ff44ff', () => {
         this._launchRound({ chaosMode: true, timeOverride: Math.max(this.getDifficulty().timeLimit - 1500, 2500) });
       });
     }
