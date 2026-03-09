@@ -395,19 +395,24 @@
       // Rule panel - gradient background
       const panelGfx = this.add.graphics();
       panelGfx.fillGradientStyle(0x060d2e, 0x060d2e, 0x0d1e5c, 0x0d1e5c, 1);
-      panelGfx.fillRoundedRect(8, 6, width - 16, 96, 14);
+      panelGfx.fillRoundedRect(8, 6, width - 16, 112, 14);
       panelGfx.lineStyle(2, 0x3366ff, 1);
-      panelGfx.strokeRoundedRect(8, 6, width - 16, 96, 14);
+      panelGfx.strokeRoundedRect(8, 6, width - 16, 112, 14);
       // Top glow accent
       const accentGfx = this.add.graphics();
       accentGfx.lineStyle(3, 0x66aaff, 0.7);
-      accentGfx.strokeRoundedRect(8, 6, width - 16, 96, 14);
+      accentGfx.strokeRoundedRect(8, 6, width - 16, 112, 14);
 
       this.roundText = null;
-      this.ruleText = this.add.text(width / 2, height * 0.108, '', {
-        fontSize: '24px', fontFamily: 'Arial Black, sans-serif',
-        color: '#ffffff', align: 'center', wordWrap: { width: width * 0.90 },
-        stroke: '#000033', strokeThickness: 3
+      this.add.text(width / 2, 18, 'TAP', { fontSize: '11px', fontFamily: 'Arial Black', color: '#334477', letterSpacing: 5 }).setOrigin(0.5);
+      this.ruleNotText = this.add.text(width / 2, 52, 'NOT', {
+        fontSize: '32px', fontFamily: 'Arial Black', color: '#ff3333',
+        stroke: '#000000', strokeThickness: 4
+      }).setOrigin(0.5);
+      this.ruleCondText = this.add.text(width / 2, 88, '', {
+        fontSize: '16px', fontFamily: 'Arial Black', color: '#ffffff',
+        align: 'center', wordWrap: { width: width * 0.86 },
+        stroke: '#000033', strokeThickness: 2
       }).setOrigin(0.5);
 
       // ---- Bottom layout (last 140px of 710px canvas) ----
@@ -611,9 +616,19 @@
 
       this.currentRule = this.generateRule(objects, difficulty);
 
-      this.ruleText.setText(this.currentRule.text.toUpperCase());
-      this.ruleText.setAlpha(0).setScale(1.4);
-      this.tweens.add({ targets: this.ruleText, alpha: 1, scaleX: 1, scaleY: 1, duration: 280, ease: 'Back.easeOut' });
+      // Extract condition (strip "TAP NOT " prefix)
+      const condition = this.currentRule.text.toUpperCase().replace(/^TAP\s+NOT\s+/i, '');
+      this.ruleCondText.setText(condition);
+
+      // Random accent color for NOT each round
+      const notColors = ['#ff3333', '#ff6600', '#ff00cc', '#ff4499', '#dd22ff', '#ff2244', '#ff8800'];
+      this.ruleNotText.setColor(notColors[Phaser.Math.Between(0, notColors.length - 1)]);
+
+      // Animate in
+      this.ruleNotText.setAlpha(0).setScale(1.5);
+      this.ruleCondText.setAlpha(0);
+      this.tweens.add({ targets: this.ruleNotText, alpha: 1, scaleX: 1, scaleY: 1, duration: 220, ease: 'Back.easeOut' });
+      this.tweens.add({ targets: this.ruleCondText, alpha: 1, duration: 220, delay: 130 });
 
       this.spawnObjects(objects);
 
