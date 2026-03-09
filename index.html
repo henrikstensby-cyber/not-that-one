@@ -191,6 +191,7 @@
       this.load.on('progress', p => { bar.width = width * 0.7 * p; });
 
       OBJECT_TYPES.forEach(t => this.load.image(t.type, `assets/objects/${t.type}.jpg`));
+      this.load.image('icon', 'assets/objects/icon.jpg');
     }
 
     create() {
@@ -259,12 +260,16 @@
         });
       }
 
+      // App icon at top
+      const iconImg = this.add.image(width / 2, height * 0.10, 'icon').setDisplaySize(110, 110);
+      this.tweens.add({ targets: iconImg, y: height * 0.10 - 5, duration: 2000, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+
       // Title
-      const title = this.add.text(width / 2, height * 0.22, 'NOT THAT ONE!', {
-        fontSize: '40px', fontFamily: 'Arial Black, sans-serif',
+      const title = this.add.text(width / 2, height * 0.24, 'NOT THAT ONE!', {
+        fontSize: '38px', fontFamily: 'Arial Black, sans-serif',
         color: '#ffffff', stroke: '#ff4444', strokeThickness: 6, align: 'center'
       }).setOrigin(0.5);
-      this.tweens.add({ targets: title, y: height * 0.22 - 8, duration: 1800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+      this.tweens.add({ targets: title, y: height * 0.24 - 6, duration: 1800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
 
       // Preview objects floating
       const preview = [
@@ -276,18 +281,18 @@
       ];
       preview.forEach((p, i) => {
         const x = width * 0.12 + i * (width * 0.19);
-        const y = height * 0.50;
+        const y = height * 0.42;
         const circ = this.add.circle(x, y, 28, p.color).setStrokeStyle(2, 0xffffff, 0.5);
         const img  = this.add.image(x, y, `${p.type}_c`).setDisplaySize(44, 44);
         this.tweens.add({ targets: [circ, img], y: y - 12, duration: 1000 + i * 200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut', delay: i * 150 });
       });
 
       // Play button
-      const btn = this.add.container(width / 2, height * 0.60);
-      const btnBg = this.add.rectangle(0, 0, 210, 62, 0xff4444).setStrokeStyle(3, 0xff9999);
-      const btnTxt = this.add.text(0, 0, '▶  PLAY!', { fontSize: '26px', fontFamily: 'Arial Black', color: '#ffffff' }).setOrigin(0.5);
+      const btn = this.add.container(width / 2, height * 0.54);
+      const btnBg = this.add.rectangle(0, 0, 220, 64, 0xff3333).setStrokeStyle(3, 0xff8888);
+      const btnTxt = this.add.text(0, 0, '▶  PLAY!', { fontSize: '28px', fontFamily: 'Arial Black', color: '#ffffff' }).setOrigin(0.5);
       btn.add([btnBg, btnTxt]);
-      btn.setSize(210, 62);
+      btn.setSize(220, 64);
       btn.setInteractive({ cursor: 'pointer' });
       this.tweens.add({ targets: btn, scaleX: 1.06, scaleY: 1.06, duration: 800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
       btn.on('pointerdown', () => {
@@ -303,8 +308,8 @@
       });
 
       // How To Play button
-      const howBtn = this.add.container(width / 2, height * 0.72);
-      const howBg = this.add.rectangle(0, 0, 200, 48, 0x224488).setStrokeStyle(2, 0x5588cc);
+      const howBtn = this.add.container(width / 2, height * 0.66);
+      const howBg = this.add.rectangle(0, 0, 200, 48, 0x1a3366).setStrokeStyle(2, 0x4477cc);
       const howTxt = this.add.text(0, 0, '❓ HOW TO PLAY', { fontSize: '18px', fontFamily: 'Arial Black', color: '#aaddff' }).setOrigin(0.5);
       howBtn.add([howBg, howTxt]);
       howBtn.setSize(200, 48);
@@ -315,19 +320,19 @@
       });
 
       // Mute button
-      const muteBtn = this.add.text(width - 20, 18, '🔊', { fontSize: '26px' }).setOrigin(1, 0).setInteractive({ cursor: 'pointer' });
+      const muteBtn = this.add.text(width - 16, 14, '🔊', { fontSize: '26px' }).setOrigin(1, 0).setInteractive({ cursor: 'pointer' });
       muteBtn.on('pointerdown', () => {
         const muted = MUSIC.toggleMute();
         muteBtn.setText(muted ? '🔇' : '🔊');
       });
 
       // Leaderboard button
-      const lbBtn = this.add.container(width / 2, height * 0.81);
-      const lbBg  = this.add.rectangle(0, 0, 195, 44, 0x222244).setStrokeStyle(2, 0x6666aa);
+      const lbBtn = this.add.container(width / 2, height * 0.76);
+      const lbBg  = this.add.rectangle(0, 0, 200, 46, 0x1a1a44).setStrokeStyle(2, 0x5555aa);
       const lbTxt = this.add.text(0, 0, '🏆  LEADERBOARD', { fontSize: '17px', fontFamily: 'Arial Black', color: '#ffdd00' }).setOrigin(0.5);
-      lbBtn.add([lbBg, lbTxt]); lbBtn.setSize(195, 44); lbBtn.setInteractive({ cursor: 'pointer' });
+      lbBtn.add([lbBg, lbTxt]); lbBtn.setSize(200, 46); lbBtn.setInteractive({ cursor: 'pointer' });
       lbBtn.on('pointerover', () => lbBg.setFillStyle(0x3333aa));
-      lbBtn.on('pointerout',  () => lbBg.setFillStyle(0x222244));
+      lbBtn.on('pointerout',  () => lbBg.setFillStyle(0x1a1a44));
       lbBtn.on('pointerdown', () => {
         this.cameras.main.fade(250, 0, 0, 0);
         this.time.delayedCall(250, () => this.scene.start('LeaderboardScene'));
@@ -335,8 +340,8 @@
 
       // Highscore
       const hs = localStorage.getItem('notThatOne_hs') || 0;
-      this.add.text(width / 2, height * 0.91, `Best: ${hs}`, { fontSize: '16px', fontFamily: 'Arial', color: '#ffdd00' }).setOrigin(0.5);
-      this.add.text(width / 2, height * 0.96, 'v0.1 prototype', { fontSize: '13px', fontFamily: 'Arial', color: '#555577' }).setOrigin(0.5);
+      this.add.text(width / 2, height * 0.87, `Best: ${hs}`, { fontSize: '16px', fontFamily: 'Arial', color: '#ffdd00' }).setOrigin(0.5);
+      this.add.text(width / 2, height * 0.94, 'v0.1 prototype', { fontSize: '13px', fontFamily: 'Arial', color: '#555577' }).setOrigin(0.5);
     }
   }
 
@@ -379,14 +384,24 @@
       bg.fillGradientStyle(0x0f0f1e, 0x0f0f1e, 0x1a0a2e, 0x1a0a2e, 1);
       bg.fillRect(0, 0, width, height);
 
-      // Rule panel
-      this.add.rectangle(width / 2, height * 0.10, width * 0.92, 88, 0x000000, 0.65).setStrokeStyle(2, 0x4455ff);
-      this.add.text(18, height * 0.065, 'RULE:', { fontSize: '13px', fontFamily: 'Arial', color: '#7788ff' }).setOrigin(0, 0.5);
-      this.roundText  = this.add.text(18, height * 0.138, 'Round 1', { fontSize: '11px', fontFamily: 'Arial', color: '#666688' }).setOrigin(0, 0.5);
-      this.livesText  = this.add.text(width - 14, height * 0.09, '❤️❤️❤️', { fontSize: '20px' }).setOrigin(1, 0.5);
-      this.ruleText = this.add.text(width / 2, height * 0.115, '', {
+      // Rule panel - gradient background
+      const panelGfx = this.add.graphics();
+      panelGfx.fillGradientStyle(0x060d2e, 0x060d2e, 0x0d1e5c, 0x0d1e5c, 1);
+      panelGfx.fillRoundedRect(8, 6, width - 16, 96, 14);
+      panelGfx.lineStyle(2, 0x3366ff, 1);
+      panelGfx.strokeRoundedRect(8, 6, width - 16, 96, 14);
+      // Top glow accent
+      const accentGfx = this.add.graphics();
+      accentGfx.lineStyle(3, 0x66aaff, 0.7);
+      accentGfx.strokeRoundedRect(8, 6, width - 16, 96, 14);
+
+      this.add.text(20, 20, 'RULE', { fontSize: '11px', fontFamily: 'Arial Black', color: '#4466cc', letterSpacing: 3 });
+      this.roundText = this.add.text(20, height * 0.138, 'Round 1', { fontSize: '11px', fontFamily: 'Arial', color: '#445588' }).setOrigin(0, 0.5);
+      this.livesText = this.add.text(width - 14, height * 0.09, '❤️❤️❤️', { fontSize: '20px' }).setOrigin(1, 0.5);
+      this.ruleText = this.add.text(width / 2, height * 0.108, '', {
         fontSize: '24px', fontFamily: 'Arial Black, sans-serif',
-        color: '#ffffff', align: 'center', wordWrap: { width: width * 0.87 }
+        color: '#ffffff', align: 'center', wordWrap: { width: width * 0.82 },
+        stroke: '#000033', strokeThickness: 3
       }).setOrigin(0.5);
 
       // ---- Bottom layout (last 140px of 710px canvas) ----
@@ -394,38 +409,49 @@
       this.timerBar = this.add.rectangle(0, 570, 0, 6, 0x00ff88).setOrigin(0, 0.5);
       this.timerTween = null;
 
-      // Score bar: y=578 to y=628 (50px)
-      this.add.rectangle(width / 2, 603, width, 50, 0x000000, 0.85);
-      this.scoreText = this.add.text(70, 600, '0', { fontSize: '30px', fontFamily: 'Arial Black', color: '#ffffff' }).setOrigin(0.5);
-      this.add.text(70, 622, 'SCORE', { fontSize: '10px', fontFamily: 'Arial', color: '#777777' }).setOrigin(0.5);
-      this.comboText = this.add.text(width / 2, 603, '', { fontSize: '19px', fontFamily: 'Arial Black', color: '#ffdd00' }).setOrigin(0.5);
-      this.levelText = this.add.text(width - 70, 600, 'Lv.1', { fontSize: '20px', fontFamily: 'Arial Black', color: '#aaddff' }).setOrigin(0.5);
-      this.add.text(width - 70, 622, 'LEVEL', { fontSize: '10px', fontFamily: 'Arial', color: '#777777' }).setOrigin(0.5);
+      // Score bar background with gradient
+      const scoreGfx = this.add.graphics();
+      scoreGfx.fillGradientStyle(0x050510, 0x050510, 0x0a0a20, 0x0a0a20, 1);
+      scoreGfx.fillRect(0, 572, width, 56);
+      scoreGfx.lineStyle(1, 0x223366, 0.8);
+      scoreGfx.lineBetween(0, 572, width, 572);
 
-      // Power-up bar: y=630 to y=710 (80px), clearly separate
-      this.add.rectangle(width / 2, 670, width, 80, 0x160830, 1);
-      this.add.rectangle(width / 2, 631, width, 2, 0x6633aa, 0.5); // divider line
+      this.scoreText = this.add.text(70, 597, '0', { fontSize: '30px', fontFamily: 'Arial Black', color: '#ffffff' }).setOrigin(0.5);
+      this.add.text(70, 618, 'SCORE', { fontSize: '10px', fontFamily: 'Arial Black', color: '#334466', letterSpacing: 2 }).setOrigin(0.5);
+      this.comboText = this.add.text(width / 2, 597, '', { fontSize: '18px', fontFamily: 'Arial Black', color: '#ffdd00' }).setOrigin(0.5);
+      this.levelText = this.add.text(width - 70, 597, 'Lv.1', { fontSize: '20px', fontFamily: 'Arial Black', color: '#88ccff' }).setOrigin(0.5);
+      this.add.text(width - 70, 618, 'LEVEL', { fontSize: '10px', fontFamily: 'Arial Black', color: '#334466', letterSpacing: 2 }).setOrigin(0.5);
+
+      // Power-up bar
+      const puGfx = this.add.graphics();
+      puGfx.fillGradientStyle(0x0a0520, 0x0a0520, 0x150830, 0x150830, 1);
+      puGfx.fillRect(0, 629, width, 81);
+      puGfx.lineStyle(1, 0x4422aa, 0.6);
+      puGfx.lineBetween(0, 629, width, 629);
 
       const puDefs = [
-        { key: 'slowmo',     icon: '🐢' },
-        { key: 'removeHalf', icon: '✂️'  },
-        { key: 'hint',       icon: '💡' },
+        { key: 'slowmo',     icon: '🐢', label: 'SLOW' },
+        { key: 'removeHalf', icon: '✂️',  label: 'CUT'  },
+        { key: 'hint',       icon: '💡', label: 'HINT' },
       ];
       this.puBtns = {};
       puDefs.forEach((def, i) => {
         const x = Math.round(width / 4 + i * (width / 3.2));
-        const cont = this.add.container(x, 670).setDepth(30);
-        const bg   = this.add.rectangle(0, 0, 80, 60, 0x2a1050).setStrokeStyle(2, 0x9955ff);
-        const icon = this.add.text(0, -4, def.icon, { fontSize: '26px' }).setOrigin(0.5);
-        const badge = this.add.text(32, -22, '1', {
-          fontSize: '14px', fontFamily: 'Arial Black',
+        const cont = this.add.container(x, 664).setDepth(30);
+        const bg   = this.add.graphics();
+        bg.fillStyle(0x1e0a44, 1);
+        bg.fillRoundedRect(-38, -28, 76, 56, 10);
+        bg.lineStyle(2, 0x7744cc, 1);
+        bg.strokeRoundedRect(-38, -28, 76, 56, 10);
+        const icon  = this.add.text(0, -8, def.icon, { fontSize: '24px' }).setOrigin(0.5);
+        const label = this.add.text(0, 16, def.label, { fontSize: '10px', fontFamily: 'Arial Black', color: '#8866cc', letterSpacing: 1 }).setOrigin(0.5);
+        const badge = this.add.text(30, -24, '1', {
+          fontSize: '13px', fontFamily: 'Arial Black',
           color: '#ffdd00', stroke: '#000000', strokeThickness: 4
         }).setOrigin(0.5);
-        cont.add([bg, icon, badge]);
-        cont.setSize(82, 62);
+        cont.add([bg, icon, label, badge]);
+        cont.setSize(78, 58);
         cont.setInteractive({ cursor: 'pointer' });
-        cont.on('pointerover', () => { if (this.powerUps[def.key] > 0) bg.setFillStyle(0x5522aa); });
-        cont.on('pointerout',  () => bg.setFillStyle(this.powerUps[def.key] > 0 ? 0x2a1050 : 0x0d0822));
         cont.on('pointerdown', () => this.usePowerUp(def.key));
         this.puBtns[def.key] = { cont, badge, bg };
       });
@@ -446,8 +472,9 @@
 
       // Announce banner (hidden by default)
       this.banner = this.add.text(width / 2, height * 0.45, '', {
-        fontSize: '42px', fontFamily: 'Arial Black',
-        color: '#ffffff', stroke: '#000000', strokeThickness: 6, align: 'center'
+        fontSize: '32px', fontFamily: 'Arial Black',
+        color: '#ffffff', stroke: '#000000', strokeThickness: 6,
+        align: 'center', wordWrap: { width: width * 0.88 }
       }).setOrigin(0.5).setDepth(50).setAlpha(0);
 
       this.time.delayedCall(300, () => this.startRound());
@@ -995,7 +1022,7 @@
       if (!this.canTap || this.powerUps[key] <= 0) return;
       this.powerUps[key]--;
       this.puBtns[key].badge.setText(this.powerUps[key].toString());
-      if (this.powerUps[key] === 0) this.puBtns[key].bg.setFillStyle(0x111122);
+      if (this.powerUps[key] === 0) this.puBtns[key].cont.setAlpha(0.35);
 
       if (key === 'slowmo') {
         // Slow all movement tweens for 3 seconds
@@ -1029,7 +1056,7 @@
       Object.keys(this.powerUps).forEach(key => {
         this.powerUps[key] = Math.min(this.powerUps[key] + 1, 3);
         this.puBtns[key].badge.setText(this.powerUps[key].toString());
-        this.puBtns[key].bg.setFillStyle(0x2a1050);
+        this.puBtns[key].cont.setAlpha(1);
       });
     }
 
@@ -1408,7 +1435,7 @@
       const hs   = parseInt(localStorage.getItem('notThatOne_hs') || '0');
       const isHS = data.score > 0 && data.score >= hs;
       if (isHS) {
-        const hsTxt = this.add.text(width / 2, height * 0.56, '🏆 NY REKORD!', { fontSize: '26px', fontFamily: 'Arial Black', color: '#ffdd00' }).setOrigin(0.5);
+        const hsTxt = this.add.text(width / 2, height * 0.56, '🏆 NEW RECORD!', { fontSize: '26px', fontFamily: 'Arial Black', color: '#ffdd00' }).setOrigin(0.5);
         this.tweens.add({ targets: hsTxt, scaleX: 1.12, scaleY: 1.12, duration: 500, yoyo: true, repeat: -1 });
       } else {
         this.add.text(width / 2, height * 0.56, `Best: ${hs}`, { fontSize: '19px', fontFamily: 'Arial', color: '#aaaaaa' }).setOrigin(0.5);
