@@ -612,8 +612,6 @@
     }
 
     startChaosRound() {
-      // Dark overlay for chaos
-      this.chaosOverlay = this.add.rectangle(this.W / 2, this.H / 2, this.W, this.H, 0x000000, 0.45).setDepth(5);
       this.showRoundBanner('🌀 CHAOS ROUND! 🌀', '#ff44ff', () => {
         this._launchRound({ chaosMode: true, timeOverride: Math.max(this.getDifficulty().timeLimit - 1500, 2500) });
       });
@@ -763,7 +761,6 @@
       } else {
         const msg = this.lives === 1 ? '⚠️ Last life!' : `${this.lives} lives left`;
         this.showFloatingText(this.W / 2, 300, `⏰ ${msg}`, '#ff8800');
-        if (this.chaosOverlay) { this.chaosOverlay.destroy(); this.chaosOverlay = null; }
         this.time.delayedCall(1000, () => this.startRound());
       }
     }
@@ -819,7 +816,6 @@
         this.levelText.setText(`Lv.${this.level}`);
         if (this.timerTween) this.timerTween.stop();
         SFX.roundClear();
-        if (this.chaosOverlay) { this.chaosOverlay.destroy(); this.chaosOverlay = null; }
         this.time.delayedCall(500, () => this.startRound());
       } else {
         // More correct objects remain — keep going
@@ -846,7 +842,6 @@
         const msg = this.lives === 1 ? '⚠️ Last life!' : `${this.lives} lives left`;
         this.showFloatingText(this.W / 2, 300, msg, '#ff4444');
         if (this.timerTween) this.timerTween.stop();
-        if (this.chaosOverlay) { this.chaosOverlay.destroy(); this.chaosOverlay = null; }
         this.time.delayedCall(1200, () => this.startRound());
       }
     }
@@ -1084,7 +1079,6 @@
     triggerGameOver(reason) {
       this.canTap = false;
       this.clearObjects();
-      if (this.chaosOverlay) { this.chaosOverlay.destroy(); this.chaosOverlay = null; }
       const hs = parseInt(localStorage.getItem('notThatOne_hs') || '0');
       if (this.score > hs) localStorage.setItem('notThatOne_hs', this.score);
       // Save state for potential continue (only if score > 0 and not already continued)
