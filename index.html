@@ -631,13 +631,13 @@
     }
 
     startBonusRound() {
-      this.showRoundBanner('⚡ BONUS ROUND! ⚡', '#ffdd00', () => {
+      this.showRoundBanner('⚡ BONUS ROUND! ⚡\n5x POINTS', '#ffdd00', () => {
         this._launchRound({ timeOverride: 2800, bonusMult: 5 });
       });
     }
 
     startChaosRound() {
-      this.showRoundBanner('🌀 CHAOS ROUND! 🌀', '#ff44ff', () => {
+      this.showRoundBanner('CHAOS\nROUND! 🌀', '#ff44ff', () => {
         this._launchRound({ chaosMode: true, timeOverride: Math.max(this.getDifficulty().timeLimit - 1500, 2500) });
       });
     }
