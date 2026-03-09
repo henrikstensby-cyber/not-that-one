@@ -1,0 +1,1519 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Not That One!</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Not That One">
+  <link rel="apple-touch-icon" href="assets/objects/icon.jpg">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #1a1a2e; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+  <script>
+  // =====================================================
+  // SOUND ENGINE (Web Audio API – ingen filer nødvendig)
+  // =====================================================
+  const SFX = {
+    _ctx: null,
+    _get() {
+      if (!this._ctx) this._ctx = new (window.AudioContext || window.webkitAudioContext)();
+      return this._ctx;
+    },
+    _play(freq, type, duration, volume, freqEnd) {
+      try {
+        const ctx  = this._get();
+        const osc  = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, ctx.currentTime);
+        if (freqEnd !== undefined) osc.frequency.linearRampToValueAtTime(freqEnd, ctx.currentTime + duration);
+        gain.gain.setValueAtTime(volume, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + duration);
+      } catch(e) {}
+    },
+    correct(combo) {
+      // Ascending pop, pitch rises with combo
+      const base = 440 + Math.min(combo, 10) * 40;
+      this._play(base,        'sine',   0.08, 0.35);
+      this._play(base * 1.25, 'sine',   0.12, 0.25, base * 1.5);
+    },
+    roundClear() {
+      // Short happy fanfare
+      [523, 659, 784, 1047].forEach((f, i) => {
+        setTimeout(() => this._play(f, 'sine', 0.18, 0.3), i * 80);
+      });
+    },
+    wrong() {
+      // Descending buzzer
+      this._play(300, 'sawtooth', 0.35, 0.4, 80);
+    },
+    gameOver() {
+      [400, 300, 200, 120].forEach((f, i) => {
+        setTimeout(() => this._play(f, 'sawtooth', 0.25, 0.35), i * 100);
+      });
+    },
+    tick() {
+      // Timer warning tick
+      this._play(880, 'square', 0.05, 0.15);
+    },
+    combo() {
+      // Combo milestone jingle
+      this._play(880, 'sine', 0.06, 0.3);
+      setTimeout(() => this._play(1100, 'sine', 0.10, 0.3), 80);
+    },
+  };
+
+  // =====================================================
+  // BACKGROUND MUSIC (MP3 via HTML Audio)
+  // =====================================================
+  const MUSIC = {
+    _audio: null,
+    _muted: false,
+
+    start() {
+      if (this._audio) return;
+      this._audio = new Audio('assets/objects/tune.mp3');
+      this._audio.loop   = true;
+      this._audio.volume = 0.5;
+      this._audio.play().catch(() => {});
+    },
+
+    stop() {
+      if (!this._audio) return;
+      this._audio.pause();
+      this._audio.currentTime = 0;
+      this._audio = null;
+    },
+
+    toggleMute() {
+      this._muted = !this._muted;
+      if (this._audio) this._audio.muted = this._muted;
+      return this._muted;
+    },
+  };
+
+  // =====================================================
+  // GAME DATA
+  // =====================================================
+  const OBJECT_TYPES = [
+    { type: 'apple',      category: 'fruit'   },
+    { type: 'banana',     category: 'fruit'   },
+    { type: 'grapes',     category: 'fruit'   },
+    { type: 'cherry',     category: 'fruit'   },
+    { type: 'watermelon', category: 'fruit'   },
+    { type: 'pizza',      category: 'food'    },
+    { type: 'burger',     category: 'food'    },
+    { type: 'cake',       category: 'food'    },
+    { type: 'donut',      category: 'food'    },
+    { type: 'coffee',     category: 'food'    },
+    { type: 'star',       category: 'symbol'  },
+    { type: 'heart',      category: 'symbol'  },
+    { type: 'diamond',    category: 'symbol'  },
+    { type: 'crown',      category: 'symbol'  },
+    { type: 'lightning',  category: 'symbol'  },
+    { type: 'cat',        category: 'animal'  },
+    { type: 'dog',        category: 'animal'  },
+    { type: 'rabbit',     category: 'animal'  },
+    { type: 'car',        category: 'vehicle' },
+    { type: 'rocket',     category: 'vehicle' },
+  ];
+
+  const COLORS = ['red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'cyan'];
+  const COLOR_HEX = {
+    red:    0xff3333,
+    blue:   0x3366ff,
+    green:  0x33cc44,
+    yellow: 0xffdd00,
+    purple: 0xaa33ff,
+    orange: 0xff8800,
+    pink:   0xff44aa,
+    cyan:   0x00ccff,
+  };
+
+  const MOVEMENTS = ['still', 'spinning', 'bouncing', 'floating', 'shaking'];
+
+  // Funny rule aliases (map to real rule logic)
+  const FUNNY_RULES = [
+    { text: 'Tap NOT shaking 🕺',    type: 'movement', forbidden: 'shaking'   },
+    { text: 'Tap NOT still 😴',      type: 'movement', forbidden: 'still'     },
+    { text: 'Tap NOT bouncing 🤸',   type: 'movement', forbidden: 'bouncing'  },
+    { text: 'Tap NOT floating 👻',   type: 'movement', forbidden: 'floating'  },
+    { text: 'Tap NOT spinning 😵',   type: 'movement', forbidden: 'spinning'  },
+    { text: 'Tap NOT red 🌶️',       type: 'color',    forbidden: 'red'       },
+    { text: 'Tap NOT blue 😢',       type: 'color',    forbidden: 'blue'      },
+    { text: 'Tap NOT green 🥦',      type: 'color',    forbidden: 'green'     },
+    { text: 'Tap NOT yellow ☀️',     type: 'color',    forbidden: 'yellow'    },
+    { text: 'Tap NOT purple 🔮',     type: 'color',    forbidden: 'purple'    },
+    { text: 'Tap NOT the crown 👑',  type: 'type',     forbidden: 'crown'     },
+    { text: 'Tap NOT the rabbit 🐰', type: 'type',     forbidden: 'rabbit'    },
+    { text: 'Tap NOT the dog 🐕',    type: 'type',     forbidden: 'dog'       },
+    { text: 'Tap NOT the apple 🍎',  type: 'type',     forbidden: 'apple'     },
+    { text: 'Tap NOT the cake 🎂',   type: 'type',     forbidden: 'cake'      },
+    { text: 'Tap NOT the rocket 🚀', type: 'type',     forbidden: 'rocket'    },
+  ];
+
+  // Achievements
+  const ACHIEVEMENTS = [
+    { id: 'combo3',   check: s => s.combo === 3,          text: '🔥 On Fire!',        color: '#ff6600' },
+    { id: 'combo5',   check: s => s.combo === 5,          text: '💥 Combo x5!',       color: '#ff44ff' },
+    { id: 'combo10',  check: s => s.combo === 10,         text: '👑 UNSTOPPABLE!',    color: '#ffdd00' },
+    { id: 'score1k',  check: s => s.prevScore < 1000  && s.score >= 1000,  text: '💯 1000 Points!',  color: '#00ffff' },
+    { id: 'score5k',  check: s => s.prevScore < 5000  && s.score >= 5000,  text: '🚀 5000 Points!',  color: '#ff44ff' },
+    { id: 'score10k', check: s => s.prevScore < 10000 && s.score >= 10000, text: '🌟 10K Legend!',   color: '#ffdd00' },
+    { id: 'rounds10', check: s => s.roundsPlayed === 10, text: '🏃 10 Rounds!',       color: '#88ff00' },
+    { id: 'rounds25', check: s => s.roundsPlayed === 25, text: '💪 25 Rounds!',       color: '#00ff88' },
+    { id: 'bonus',    check: s => s.bonusMultiplier >= 5, text: '⚡ Bonus Survivor!', color: '#ffaa00' },
+  ];
+
+  // =====================================================
+  // BOOT SCENE – preloads all images
+  // =====================================================
+  class BootScene extends Phaser.Scene {
+    constructor() { super('BootScene'); }
+
+    preload() {
+      const { width, height } = this.scale;
+      const outline = this.add.rectangle(width / 2, height / 2, width * 0.7, 24, 0x000000).setStrokeStyle(2, 0x4455ff);
+      const bar = this.add.rectangle(width / 2 - width * 0.35, height / 2, 0, 20, 0x4455ff).setOrigin(0, 0.5);
+      this.add.text(width / 2, height / 2 - 40, 'Loading...', { fontSize: '20px', fontFamily: 'Arial Black', color: '#ffffff' }).setOrigin(0.5);
+      this.load.on('progress', p => { bar.width = width * 0.7 * p; });
+
+      OBJECT_TYPES.forEach(t => this.load.image(t.type, `assets/objects/${t.type}.jpg`));
+    }
+
+    create() {
+      // For each image: remove white background, then clip to circle
+      const cropSize = 256;
+      OBJECT_TYPES.forEach(t => {
+        const canvas = document.createElement('canvas');
+        canvas.width  = cropSize;
+        canvas.height = cropSize;
+        const ctx = canvas.getContext('2d');
+
+        // 1. Draw the image
+        const source = this.textures.get(t.type).getSourceImage();
+        ctx.drawImage(source, 0, 0, cropSize, cropSize);
+
+        // 2. Make white/near-white pixels transparent
+        const imageData = ctx.getImageData(0, 0, cropSize, cropSize);
+        const d = imageData.data;
+        for (let i = 0; i < d.length; i += 4) {
+          if (d[i] > 230 && d[i+1] > 230 && d[i+2] > 230) {
+            d[i+3] = 0;
+          }
+        }
+        ctx.putImageData(imageData, 0, 0);
+
+        // 3. Clip to circle using destination-in compositing
+        ctx.globalCompositeOperation = 'destination-in';
+        ctx.beginPath();
+        ctx.arc(cropSize / 2, cropSize / 2, cropSize / 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalCompositeOperation = 'source-over';
+
+        this.textures.addCanvas(`${t.type}_c`, canvas);
+      });
+
+      this.scene.start('MenuScene');
+    }
+  }
+
+  // =====================================================
+  // MENU SCENE
+  // =====================================================
+  class MenuScene extends Phaser.Scene {
+    constructor() { super('MenuScene'); }
+
+    create() {
+      const { width, height } = this.scale;
+
+      const bg = this.add.graphics();
+      bg.fillGradientStyle(0x1a1a2e, 0x1a1a2e, 0x16213e, 0x16213e, 1);
+      bg.fillRect(0, 0, width, height);
+
+      // Twinkling stars
+      for (let i = 0; i < 50; i++) {
+        const star = this.add.circle(
+          Phaser.Math.Between(0, width),
+          Phaser.Math.Between(0, height * 0.6),
+          Phaser.Math.Between(1, 3),
+          0xffffff,
+          Phaser.Math.FloatBetween(0.3, 1)
+        );
+        this.tweens.add({
+          targets: star, alpha: 0.1,
+          duration: Phaser.Math.Between(1000, 3000),
+          yoyo: true, repeat: -1
+        });
+      }
+
+      // Title
+      const title = this.add.text(width / 2, height * 0.22, 'NOT THAT ONE!', {
+        fontSize: '40px', fontFamily: 'Arial Black, sans-serif',
+        color: '#ffffff', stroke: '#ff4444', strokeThickness: 6, align: 'center'
+      }).setOrigin(0.5);
+      this.tweens.add({ targets: title, y: height * 0.22 - 8, duration: 1800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+
+      // Preview objects floating
+      const preview = [
+        { type: 'apple',  color: 0xff3333 },
+        { type: 'star',   color: 0xffdd00 },
+        { type: 'cat',    color: 0x3366ff },
+        { type: 'car',    color: 0xff8800 },
+        { type: 'pizza',  color: 0xaa33ff },
+      ];
+      preview.forEach((p, i) => {
+        const x = width * 0.12 + i * (width * 0.19);
+        const y = height * 0.50;
+        const circ = this.add.circle(x, y, 28, p.color).setStrokeStyle(2, 0xffffff, 0.5);
+        const img  = this.add.image(x, y, `${p.type}_c`).setDisplaySize(44, 44);
+        this.tweens.add({ targets: [circ, img], y: y - 12, duration: 1000 + i * 200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut', delay: i * 150 });
+      });
+
+      // Play button
+      const btn = this.add.container(width / 2, height * 0.60);
+      const btnBg = this.add.rectangle(0, 0, 210, 62, 0xff4444).setStrokeStyle(3, 0xff9999);
+      const btnTxt = this.add.text(0, 0, '▶  PLAY!', { fontSize: '26px', fontFamily: 'Arial Black', color: '#ffffff' }).setOrigin(0.5);
+      btn.add([btnBg, btnTxt]);
+      btn.setSize(210, 62);
+      btn.setInteractive({ cursor: 'pointer' });
+      this.tweens.add({ targets: btn, scaleX: 1.06, scaleY: 1.06, duration: 800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+      btn.on('pointerdown', () => {
+        const alreadySeen = !!localStorage.getItem('notThatOne_seen');
+        localStorage.setItem('notThatOne_seen', '1');
+        MUSIC.start();
+        this.cameras.main.fade(300, 0, 0, 0);
+        if (!alreadySeen) {
+          this.time.delayedCall(300, () => this.scene.start('HowToPlayScene'));
+        } else {
+          this.time.delayedCall(300, () => this.scene.start('GameScene'));
+        }
+      });
+
+      // How To Play button
+      const howBtn = this.add.container(width / 2, height * 0.72);
+      const howBg = this.add.rectangle(0, 0, 200, 48, 0x224488).setStrokeStyle(2, 0x5588cc);
+      const howTxt = this.add.text(0, 0, '❓ HOW TO PLAY', { fontSize: '18px', fontFamily: 'Arial Black', color: '#aaddff' }).setOrigin(0.5);
+      howBtn.add([howBg, howTxt]);
+      howBtn.setSize(200, 48);
+      howBtn.setInteractive({ cursor: 'pointer' });
+      howBtn.on('pointerdown', () => {
+        this.cameras.main.fade(300, 0, 0, 0);
+        this.time.delayedCall(300, () => this.scene.start('HowToPlayScene'));
+      });
+
+      // Mute button
+      const muteBtn = this.add.text(width - 20, 18, '🔊', { fontSize: '26px' }).setOrigin(1, 0).setInteractive({ cursor: 'pointer' });
+      muteBtn.on('pointerdown', () => {
+        const muted = MUSIC.toggleMute();
+        muteBtn.setText(muted ? '🔇' : '🔊');
+      });
+
+      // Leaderboard button
+      const lbBtn = this.add.container(width / 2, height * 0.81);
+      const lbBg  = this.add.rectangle(0, 0, 195, 44, 0x222244).setStrokeStyle(2, 0x6666aa);
+      const lbTxt = this.add.text(0, 0, '🏆  LEADERBOARD', { fontSize: '17px', fontFamily: 'Arial Black', color: '#ffdd00' }).setOrigin(0.5);
+      lbBtn.add([lbBg, lbTxt]); lbBtn.setSize(195, 44); lbBtn.setInteractive({ cursor: 'pointer' });
+      lbBtn.on('pointerover', () => lbBg.setFillStyle(0x3333aa));
+      lbBtn.on('pointerout',  () => lbBg.setFillStyle(0x222244));
+      lbBtn.on('pointerdown', () => {
+        this.cameras.main.fade(250, 0, 0, 0);
+        this.time.delayedCall(250, () => this.scene.start('LeaderboardScene'));
+      });
+
+      // Highscore
+      const hs = localStorage.getItem('notThatOne_hs') || 0;
+      this.add.text(width / 2, height * 0.91, `Best: ${hs}`, { fontSize: '16px', fontFamily: 'Arial', color: '#ffdd00' }).setOrigin(0.5);
+      this.add.text(width / 2, height * 0.96, 'v0.1 prototype', { fontSize: '13px', fontFamily: 'Arial', color: '#555577' }).setOrigin(0.5);
+    }
+  }
+
+  // =====================================================
+  // GAME SCENE
+  // =====================================================
+  class GameScene extends Phaser.Scene {
+    constructor() { super('GameScene'); }
+
+    create() {
+      const { width, height } = this.scale;
+      this.W = width;
+      this.H = height;
+      this.score = 0;
+      this.combo = 0;
+      this.level = 1;
+      this.roundsPlayed = 0;
+      this.gameObjects = [];
+      this.currentRule = null;
+      this.canTap = false;
+      this.bonusMultiplier = 1;
+      this.lives = 3;
+      this.powerUps = { slowmo: 1, removeHalf: 1, hint: 1 };
+      this.triggeredAchievements = new Set();
+      this.isPaused = false;
+      this.lastWrongObj = null;
+      this.roundNumber = 0;
+
+      // Load continue state if coming from continue button
+      const continueData = this.registry.get('continueData');
+      if (continueData) {
+        this.score = continueData.score;
+        this.level = continueData.level;
+        this.roundsPlayed = continueData.roundsPlayed;
+        this.registry.remove('continueData');
+      }
+
+      // Background
+      const bg = this.add.graphics();
+      bg.fillGradientStyle(0x0f0f1e, 0x0f0f1e, 0x1a0a2e, 0x1a0a2e, 1);
+      bg.fillRect(0, 0, width, height);
+
+      // Rule panel
+      this.add.rectangle(width / 2, height * 0.10, width * 0.92, 88, 0x000000, 0.65).setStrokeStyle(2, 0x4455ff);
+      this.add.text(18, height * 0.065, 'RULE:', { fontSize: '13px', fontFamily: 'Arial', color: '#7788ff' }).setOrigin(0, 0.5);
+      this.roundText  = this.add.text(18, height * 0.138, 'Round 1', { fontSize: '11px', fontFamily: 'Arial', color: '#666688' }).setOrigin(0, 0.5);
+      this.livesText  = this.add.text(width - 14, height * 0.09, '❤️❤️❤️', { fontSize: '20px' }).setOrigin(1, 0.5);
+      this.ruleText = this.add.text(width / 2, height * 0.115, '', {
+        fontSize: '24px', fontFamily: 'Arial Black, sans-serif',
+        color: '#ffffff', align: 'center', wordWrap: { width: width * 0.87 }
+      }).setOrigin(0.5);
+
+      // ---- Bottom layout (last 140px of 710px canvas) ----
+      // Timer bar at y=570
+      this.timerBar = this.add.rectangle(0, 570, 0, 6, 0x00ff88).setOrigin(0, 0.5);
+      this.timerTween = null;
+
+      // Score bar: y=578 to y=628 (50px)
+      this.add.rectangle(width / 2, 603, width, 50, 0x000000, 0.85);
+      this.scoreText = this.add.text(70, 600, '0', { fontSize: '30px', fontFamily: 'Arial Black', color: '#ffffff' }).setOrigin(0.5);
+      this.add.text(70, 622, 'SCORE', { fontSize: '10px', fontFamily: 'Arial', color: '#777777' }).setOrigin(0.5);
+      this.comboText = this.add.text(width / 2, 603, '', { fontSize: '19px', fontFamily: 'Arial Black', color: '#ffdd00' }).setOrigin(0.5);
+      this.levelText = this.add.text(width - 70, 600, 'Lv.1', { fontSize: '20px', fontFamily: 'Arial Black', color: '#aaddff' }).setOrigin(0.5);
+      this.add.text(width - 70, 622, 'LEVEL', { fontSize: '10px', fontFamily: 'Arial', color: '#777777' }).setOrigin(0.5);
+
+      // Power-up bar: y=630 to y=710 (80px), clearly separate
+      this.add.rectangle(width / 2, 670, width, 80, 0x160830, 1);
+      this.add.rectangle(width / 2, 631, width, 2, 0x6633aa, 0.5); // divider line
+
+      const puDefs = [
+        { key: 'slowmo',     icon: '🐢' },
+        { key: 'removeHalf', icon: '✂️'  },
+        { key: 'hint',       icon: '💡' },
+      ];
+      this.puBtns = {};
+      puDefs.forEach((def, i) => {
+        const x = Math.round(width / 4 + i * (width / 3.2));
+        const cont = this.add.container(x, 670).setDepth(30);
+        const bg   = this.add.rectangle(0, 0, 80, 60, 0x2a1050).setStrokeStyle(2, 0x9955ff);
+        const icon = this.add.text(0, -4, def.icon, { fontSize: '26px' }).setOrigin(0.5);
+        const badge = this.add.text(32, -22, '1', {
+          fontSize: '14px', fontFamily: 'Arial Black',
+          color: '#ffdd00', stroke: '#000000', strokeThickness: 4
+        }).setOrigin(0.5);
+        cont.add([bg, icon, badge]);
+        cont.setSize(82, 62);
+        cont.setInteractive({ cursor: 'pointer' });
+        cont.on('pointerover', () => { if (this.powerUps[def.key] > 0) bg.setFillStyle(0x5522aa); });
+        cont.on('pointerout',  () => bg.setFillStyle(this.powerUps[def.key] > 0 ? 0x2a1050 : 0x0d0822));
+        cont.on('pointerdown', () => this.usePowerUp(def.key));
+        this.puBtns[def.key] = { cont, badge, bg };
+      });
+
+      // Flash overlay
+      this.flashOverlay = this.add.rectangle(width / 2, height / 2, width, height, 0xff0000, 0).setDepth(20);
+
+      // Object layer
+      this.objectContainer = this.add.container(0, 0);
+
+      // Pause button
+      const pauseBtn = this.add.text(14, 14, '⏸', { fontSize: '24px' }).setOrigin(0, 0).setInteractive({ cursor: 'pointer' }).setDepth(30);
+      pauseBtn.on('pointerdown', () => this.pauseGame());
+
+      // Mute button
+      const muteBtn = this.add.text(this.W - 14, 14, '🔊', { fontSize: '24px' }).setOrigin(1, 0).setInteractive({ cursor: 'pointer' }).setDepth(30);
+      muteBtn.on('pointerdown', () => muteBtn.setText(MUSIC.toggleMute() ? '🔇' : '🔊'));
+
+      // Announce banner (hidden by default)
+      this.banner = this.add.text(width / 2, height * 0.45, '', {
+        fontSize: '42px', fontFamily: 'Arial Black',
+        color: '#ffffff', stroke: '#000000', strokeThickness: 6, align: 'center'
+      }).setOrigin(0.5).setDepth(50).setAlpha(0);
+
+      this.time.delayedCall(300, () => this.startRound());
+      this.scoreText.setText(this.score.toString());
+      this.levelText.setText(`Lv.${this.level}`);
+    }
+
+    // ----- Difficulty -----
+    getDifficulty() {
+      return {
+        objectCount:     Math.min(4 + Math.floor(this.level / 2), 14),
+        useMovement:     this.level >= 3,
+        useEffects:      this.level >= 5,
+        useCombinedRule: this.level >= 6,
+        timeLimit:       Math.max(9000 - (this.level - 1) * 450, 3000),
+      };
+    }
+
+    // ----- Object generation -----
+    generateObjectData(count, difficulty) {
+      const pool = Phaser.Utils.Array.Shuffle([...OBJECT_TYPES]).slice(0, Math.min(count, OBJECT_TYPES.length));
+      return pool.map(t => ({
+        type:     t.type,
+        category: t.category,
+        color:    COLORS[Phaser.Math.Between(0, COLORS.length - 1)],
+        movement: difficulty.useMovement ? MOVEMENTS[Phaser.Math.Between(0, MOVEMENTS.length - 1)] : 'still',
+        effect:   difficulty.useEffects  ? ['none', 'none', 'none', 'glowing', 'blinking', 'transparent'][Phaser.Math.Between(0, 5)] : 'none',
+      }));
+    }
+
+    // ----- Rule generation -----
+    generateRule(objects, difficulty) {
+      // 25% chance of funny rule (level 2+)
+      if (this.level >= 2 && Math.random() < 0.25) {
+        const candidates = FUNNY_RULES.filter(r => {
+          const valid   = objects.filter(o => this.isCorrect(o, r));
+          const invalid = objects.filter(o => !this.isCorrect(o, r));
+          return valid.length >= 1 && invalid.length >= 1;
+        });
+        if (candidates.length > 0) return candidates[Phaser.Math.Between(0, candidates.length - 1)];
+      }
+
+      const simpleTypes = ['type', 'color'];
+      if (difficulty.useMovement) simpleTypes.push('movement');
+
+      // Try combined rule first at higher levels
+      if (difficulty.useCombinedRule && Math.random() < 0.5) {
+        for (let attempt = 0; attempt < 40; attempt++) {
+          const t1 = simpleTypes[Phaser.Math.Between(0, simpleTypes.length - 1)];
+          let t2;
+          do { t2 = simpleTypes[Phaser.Math.Between(0, simpleTypes.length - 1)]; } while (t2 === t1);
+
+          const c1 = this._makeCondition(t1, objects);
+          const c2 = this._makeCondition(t2, objects);
+          const rule = {
+            type: 'combined',
+            conditions: [c1, c2],
+            text: `Tap NOT ${c1.forbidden} AND NOT ${c2.forbidden}`,
+          };
+          const valid   = objects.filter(o => this.isCorrect(o, rule));
+          const invalid = objects.filter(o => !this.isCorrect(o, rule));
+          if (valid.length >= 1 && invalid.length >= 1) return rule;
+        }
+      }
+
+      // Simple rule
+      for (let attempt = 0; attempt < 60; attempt++) {
+        const ruleType = simpleTypes[Phaser.Math.Between(0, simpleTypes.length - 1)];
+        const rule = this._makeCondition(ruleType, objects);
+        rule.text = `Tap NOT ${rule.forbidden}`;
+        const valid   = objects.filter(o => this.isCorrect(o, rule));
+        const invalid = objects.filter(o => !this.isCorrect(o, rule));
+        if (valid.length >= 1 && invalid.length >= 1) return rule;
+      }
+
+      // Guaranteed fallback
+      const obj = objects[0];
+      return { type: 'type', forbidden: obj.type, text: `Tap NOT ${obj.type}` };
+    }
+
+    _makeCondition(ruleType, objects) {
+      if (ruleType === 'type') {
+        const forbidden = objects[Phaser.Math.Between(0, objects.length - 1)].type;
+        return { type: 'type', forbidden };
+      } else if (ruleType === 'color') {
+        const forbidden = COLORS[Phaser.Math.Between(0, COLORS.length - 1)];
+        return { type: 'color', forbidden };
+      } else {
+        const forbidden = MOVEMENTS[Phaser.Math.Between(0, MOVEMENTS.length - 1)];
+        return { type: 'movement', forbidden };
+      }
+    }
+
+    isCorrect(obj, rule) {
+      if (!rule) return false;
+      if (rule.type === 'type')     return obj.type !== rule.forbidden;
+      if (rule.type === 'color')    return obj.color !== rule.forbidden;
+      if (rule.type === 'movement') return obj.movement !== rule.forbidden;
+      if (rule.type === 'combined') return rule.conditions.every(c => this.isCorrect(obj, c));
+      return false;
+    }
+
+    // ----- Round flow -----
+    startRound() {
+      this.clearObjects();
+      this.canTap = false;
+      this.bonusMultiplier = 1;
+      this.roundNumber++;
+      if (this.roundText) this.roundText.setText(`Round ${this.roundNumber}`);
+
+      // Special round detection (never on round 0)
+      const isBonus = this.roundsPlayed > 0 && this.roundsPlayed % 7 === 0;
+      const isChaos = this.roundsPlayed > 0 && this.roundsPlayed % 5 === 0 && !isBonus;
+
+      if (isBonus) { this.startBonusRound(); return; }
+      if (isChaos) { this.startChaosRound(); return; }
+
+      this._launchRound({});
+    }
+
+    _launchRound({ timeOverride, chaosMode, bonusMult } = {}) {
+      const difficulty = this.getDifficulty();
+      if (bonusMult)  this.bonusMultiplier = bonusMult;
+
+      const objects = this.generateObjectData(difficulty.objectCount, difficulty);
+      if (chaosMode) objects.forEach(o => o.movement = MOVEMENTS[Phaser.Math.Between(1, MOVEMENTS.length - 1)]);
+
+      this.currentRule = this.generateRule(objects, difficulty);
+
+      this.ruleText.setText(this.currentRule.text.toUpperCase());
+      this.ruleText.setAlpha(0).setScale(1.4);
+      this.tweens.add({ targets: this.ruleText, alpha: 1, scaleX: 1, scaleY: 1, duration: 280, ease: 'Back.easeOut' });
+
+      this.spawnObjects(objects);
+
+      // Countdown after objects spawn, then enable tapping
+      const spawnDelay = objects.length * 75 + 100;
+      this.time.delayedCall(spawnDelay, () => {
+        this.showCountdown(() => {
+          this.canTap = true;
+          const roundTime = timeOverride ?? difficulty.timeLimit;
+          this.startTimer(roundTime);
+
+          // Mid-round property swap (level 5+, normal rounds only)
+          if (this.level >= 5 && !chaosMode && !bonusMult) {
+            const swapAt = Phaser.Math.Between(
+              Math.floor(roundTime * 0.35),
+              Math.floor(roundTime * 0.6)
+            );
+            this.time.delayedCall(swapAt, () => {
+              if (this.canTap) this.swapObjectProperties();
+            });
+          }
+        });
+      });
+    }
+
+    startBonusRound() {
+      this.showRoundBanner('⚡ BONUS ROUND! ⚡', '#ffdd00', () => {
+        this._launchRound({ timeOverride: 2800, bonusMult: 5 });
+      });
+    }
+
+    startChaosRound() {
+      // Dark overlay for chaos
+      this.chaosOverlay = this.add.rectangle(this.W / 2, this.H / 2, this.W, this.H, 0x000000, 0.45).setDepth(5);
+      this.showRoundBanner('🌀 CHAOS ROUND! 🌀', '#ff44ff', () => {
+        this._launchRound({ chaosMode: true, timeOverride: Math.max(this.getDifficulty().timeLimit - 1500, 2500) });
+      });
+    }
+
+    showRoundBanner(text, color, callback) {
+      this.banner.setText(text).setColor(color).setAlpha(0).setScale(0.5);
+      this.tweens.add({
+        targets: this.banner, alpha: 1, scaleX: 1, scaleY: 1, duration: 300, ease: 'Back.easeOut',
+        onComplete: () => {
+          this.time.delayedCall(900, () => {
+            this.tweens.add({ targets: this.banner, alpha: 0, scaleX: 1.3, scaleY: 1.3, duration: 250,
+              onComplete: () => callback()
+            });
+          });
+        }
+      });
+    }
+
+    // ----- Spawning -----
+    spawnObjects(objects) {
+      const { W, H } = this;
+      const areaTop    = H * 0.205;
+      const areaBottom = 558;
+      const areaLeft   = W * 0.05;
+      const areaRight  = W * 0.95;
+
+      const cols   = Math.ceil(Math.sqrt(objects.length * 1.4));
+      const rows   = Math.ceil(objects.length / cols);
+      const cellW  = (areaRight - areaLeft) / cols;
+      const cellH  = (areaBottom - areaTop) / rows;
+      const objSize = Math.min(68, cellW * 0.78, cellH * 0.78);
+
+      const positions = [];
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          if (positions.length < objects.length) {
+            positions.push({
+              x: areaLeft + cellW * c + cellW / 2 + Phaser.Math.Between(-8, 8),
+              y: areaTop  + cellH * r + cellH / 2 + Phaser.Math.Between(-8, 8),
+            });
+          }
+        }
+      }
+      Phaser.Utils.Array.Shuffle(positions);
+
+      objects.forEach((data, i) => {
+        this.time.delayedCall(i * 75, () => {
+          this.spawnSingleObject(data, positions[i].x, positions[i].y, objSize);
+        });
+      });
+    }
+
+    spawnSingleObject(data, x, y, size) {
+      const container = this.add.container(x, y);
+      container.objData = data;
+      container.baseX   = x;
+      container.baseY   = y;
+      container.objSize = size;
+
+      // Background circle
+      const circle = this.add.circle(0, 0, size / 2, COLOR_HEX[data.color] || 0x888888);
+      circle.setStrokeStyle(3, 0xffffff, 0.7);
+      container.circleRef = circle;
+
+      // Image (pre-clipped to circle in BootScene)
+      const img = this.add.image(0, 0, `${data.type}_c`).setDisplaySize(size * 0.94, size * 0.94);
+
+      container.add([circle, img]);
+      container.setSize(size, size);
+      container.setInteractive({ cursor: 'pointer' });
+
+      // Pop-in
+      container.setScale(0);
+      this.tweens.add({ targets: container, scaleX: 1, scaleY: 1, duration: 280, ease: 'Back.easeOut' });
+
+      this.applyMovement(container, data.movement);
+      this.applyEffect(container, circle, data.effect, size);
+
+      container.on('pointerdown', () => this.onObjectTap(container));
+      container.on('pointerover', () => { if (this.canTap) container.setScale(1.12); });
+      container.on('pointerout',  () => { container.setScale(1.0); });
+
+      this.objectContainer.add(container);
+      this.gameObjects.push(container);
+    }
+
+    applyMovement(container, movement) {
+      if (movement === 'spinning') {
+        this.tweens.add({ targets: container, angle: 360, duration: 2200, repeat: -1, ease: 'Linear' });
+      } else if (movement === 'bouncing') {
+        this.tweens.add({ targets: container, y: container.y - 28, duration: 480, yoyo: true, repeat: -1, ease: 'Bounce.easeOut' });
+      } else if (movement === 'floating') {
+        this.tweens.add({ targets: container, y: container.y - 14, duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut', delay: Phaser.Math.Between(0, 600) });
+      } else if (movement === 'shaking') {
+        this.tweens.add({ targets: container, x: container.x + 7, duration: 75, yoyo: true, repeat: -1, ease: 'Linear' });
+      }
+    }
+
+    applyEffect(container, circle, effect, size) {
+      if (effect === 'glowing') {
+        const glow = this.add.circle(0, 0, size / 2 + 10, 0xffffff, 0.25);
+        container.addAt(glow, 0);
+        this.tweens.add({ targets: glow, scaleX: 1.35, scaleY: 1.35, alpha: 0, duration: 900, yoyo: true, repeat: -1 });
+      } else if (effect === 'blinking') {
+        this.tweens.add({ targets: container, alpha: 0.15, duration: 280, yoyo: true, repeat: -1 });
+      } else if (effect === 'transparent') {
+        container.setAlpha(0.45);
+      }
+    }
+
+    // ----- Timer -----
+    startTimer(duration) {
+      if (this.timerTween) this.timerTween.stop();
+      this.timerBar.width = this.W;
+      this.timerBar.fillColor = 0x00ff88;
+
+      this.timerTween = this.tweens.add({
+        targets: this.timerBar, width: 0, duration, ease: 'Linear',
+        onUpdate: (tween) => {
+          const p = tween.progress;
+          if (p > 0.55) this.timerBar.fillColor = 0xffdd00;
+          if (p > 0.80) {
+            this.timerBar.fillColor = 0xff4444;
+            // Tick every ~600ms in the danger zone
+            const elapsed = tween.elapsed;
+            if (Math.floor(elapsed / 600) !== Math.floor((elapsed - 16) / 600)) SFX.tick();
+          }
+        },
+        onComplete: () => this.onTimeOut()
+      });
+    }
+
+    onTimeOut() {
+      if (!this.canTap) return;
+      this.canTap = false;
+      this.combo = 0;
+      this.lives--;
+      this.updateComboUI();
+      this.updateLivesUI();
+      this.flashScreen(0xff8800, 0.5);
+      SFX.wrong();
+      if (navigator.vibrate) navigator.vibrate([80, 40, 80]);
+
+      if (this.lives <= 0) {
+        this.time.delayedCall(600, () => this.triggerGameOver('Time\'s up! ⏰'));
+      } else {
+        const msg = this.lives === 1 ? '⚠️ Last life!' : `${this.lives} lives left`;
+        this.showFloatingText(this.W / 2, 300, `⏰ ${msg}`, '#ff8800');
+        if (this.chaosOverlay) { this.chaosOverlay.destroy(); this.chaosOverlay = null; }
+        this.time.delayedCall(1000, () => this.startRound());
+      }
+    }
+
+    // ----- Tap handling -----
+    onObjectTap(container) {
+      if (!this.canTap) return;
+      this.canTap = false;
+
+      if (this.isCorrect(container.objData, this.currentRule)) {
+        this.handleCorrect(container);
+      } else {
+        this.handleWrong(container);
+      }
+    }
+
+    handleCorrect(container) {
+      // Remove from active objects immediately
+      const idx = this.gameObjects.indexOf(container);
+      if (idx > -1) this.gameObjects.splice(idx, 1);
+
+      this.combo++;
+      const multiplier = this.getMultiplier() * this.bonusMultiplier;
+      const points = 100 * multiplier;
+      this.score += points;
+
+      // Pop effect + destroy
+      this.tweens.add({ targets: container, scaleX: 1.6, scaleY: 1.6, alpha: 0, duration: 320, ease: 'Power2', onComplete: () => container.destroy() });
+      this.spawnParticles(container.x, container.y, COLOR_HEX[container.objData.color] || 0xffffff);
+      this.showFloatingText(container.x, container.y - 20, `+${points}`, '#00ff88');
+
+      const prevScore = this.score - points;
+      this.scoreText.setText(this.score.toString());
+      this.tweens.add({ targets: this.scoreText, scaleX: 1.3, scaleY: 1.3, duration: 100, yoyo: true });
+      this.updateComboUI();
+      this.flashScreen(0x00ff44, 0.18);
+      SFX.correct(this.combo);
+      if (navigator.vibrate) navigator.vibrate(30);
+      this.checkAchievements(prevScore);
+
+      // Check if any correct objects remain
+      const remaining = this.gameObjects.filter(obj => this.isCorrect(obj.objData, this.currentRule));
+      if (remaining.length === 0) {
+        // All correct objects tapped — round complete!
+        this.roundsPlayed++;
+        if (this.roundsPlayed % 3 === 0) this.level++;
+        if (this.roundsPlayed % 5 === 0) this.replenishPowerUps();
+        if (this.roundsPlayed % 10 === 0 && this.lives < 5) {
+          this.lives++;
+          this.updateLivesUI();
+          this.showFloatingText(this.W / 2, 300, '+1 ❤️', '#ff4444');
+        }
+        this.levelText.setText(`Lv.${this.level}`);
+        if (this.timerTween) this.timerTween.stop();
+        SFX.roundClear();
+        if (this.chaosOverlay) { this.chaosOverlay.destroy(); this.chaosOverlay = null; }
+        this.time.delayedCall(500, () => this.startRound());
+      } else {
+        // More correct objects remain — keep going
+        this.canTap = true;
+      }
+    }
+
+    handleWrong(container) {
+      this.lastWrongObj = container.objData;
+      this.combo = 0;
+      this.lives--;
+      this.updateComboUI();
+      this.updateLivesUI();
+
+      this.tweens.add({ targets: container, scaleX: 0.3, scaleY: 0.3, alpha: 0, duration: 200, ease: 'Power2' });
+      this.flashScreen(0xff0000, 0.55);
+      SFX.wrong();
+      if (navigator.vibrate) navigator.vibrate([80, 40, 80]);
+      this.highlightCorrectObjects();
+
+      if (this.lives <= 0) {
+        this.time.delayedCall(1100, () => this.triggerGameOver('No lives left! 💀'));
+      } else {
+        const msg = this.lives === 1 ? '⚠️ Last life!' : `${this.lives} lives left`;
+        this.showFloatingText(this.W / 2, 300, msg, '#ff4444');
+        if (this.timerTween) this.timerTween.stop();
+        if (this.chaosOverlay) { this.chaosOverlay.destroy(); this.chaosOverlay = null; }
+        this.time.delayedCall(1200, () => this.startRound());
+      }
+    }
+
+    highlightCorrectObjects() {
+      this.gameObjects.forEach(container => {
+        if (this.isCorrect(container.objData, this.currentRule)) {
+          const ring = this.add.circle(container.x, container.y, container.objSize / 2 + 10, 0x00ff44, 0.55).setDepth(18);
+          this.tweens.add({ targets: ring, alpha: 0, scaleX: 1.6, scaleY: 1.6, duration: 900, onComplete: () => ring.destroy() });
+        }
+      });
+    }
+
+    flashScreen(color, alpha) {
+      this.flashOverlay.setFillStyle(color, alpha);
+      this.flashOverlay.setAlpha(alpha);
+      this.tweens.add({ targets: this.flashOverlay, alpha: 0, duration: 320, ease: 'Power2' });
+    }
+
+    getMultiplier() {
+      if (this.combo >= 10) return 5;
+      if (this.combo >= 5)  return 3;
+      if (this.combo >= 3)  return 2;
+      return 1;
+    }
+
+    updateComboUI() {
+      const m = this.getMultiplier();
+      if (this.combo >= 3) {
+        this.comboText.setText(`🔥 x${m} COMBO (${this.combo})`);
+        this.tweens.add({ targets: this.comboText, scaleX: 1.25, scaleY: 1.25, duration: 90, yoyo: true });
+        if (this.combo === 3 || this.combo === 5 || this.combo === 10) SFX.combo();
+      } else {
+        this.comboText.setText('');
+      }
+    }
+
+    showFloatingText(x, y, text, color) {
+      const t = this.add.text(x, y, text, {
+        fontSize: '30px', fontFamily: 'Arial Black',
+        color: color || '#ffffff', stroke: '#000000', strokeThickness: 4
+      }).setOrigin(0.5).setDepth(25);
+      this.tweens.add({ targets: t, y: y - 90, alpha: 0, duration: 750, ease: 'Power2', onComplete: () => t.destroy() });
+    }
+
+    spawnParticles(x, y, color) {
+      for (let i = 0; i < 10; i++) {
+        const angle = (i / 10) * Math.PI * 2;
+        const dist  = Phaser.Math.Between(45, 90);
+        const p = this.add.circle(x, y, Phaser.Math.Between(4, 11), color).setDepth(18);
+        this.tweens.add({
+          targets: p,
+          x: x + Math.cos(angle) * dist,
+          y: y + Math.sin(angle) * dist,
+          alpha: 0, scaleX: 0.1, scaleY: 0.1,
+          duration: Phaser.Math.Between(400, 700),
+          ease: 'Power2', onComplete: () => p.destroy()
+        });
+      }
+    }
+
+    // ----- Lives -----
+    updateLivesUI() {
+      const filled = '❤️'.repeat(Math.max(0, this.lives));
+      const empty  = '🖤'.repeat(Math.max(0, 3 - this.lives));
+      this.livesText.setText(filled + empty);
+      // Shake animation on life lost
+      this.tweens.add({ targets: this.livesText, x: this.livesText.x + 6, duration: 50, yoyo: true, repeat: 3, ease: 'Linear',
+        onComplete: () => { this.livesText.setX(this.W - 14); }
+      });
+    }
+
+    // ----- Countdown -----
+    showCountdown(callback) {
+      const steps = [
+        { label: '3', color: '#ff4444', freq: 440 },
+        { label: '2', color: '#ffaa00', freq: 550 },
+        { label: '1', color: '#ffdd00', freq: 660 },
+        { label: 'GO!', color: '#00ff88', freq: 880 },
+      ];
+      let i = 0;
+      const next = () => {
+        if (i >= steps.length) { callback(); return; }
+        const s = steps[i++];
+        SFX._play(s.freq, 'sine', 0.12, s.label === 'GO!' ? 0.35 : 0.25);
+        const t = this.add.text(this.W / 2, this.H / 2 - 40, s.label, {
+          fontSize: s.label === 'GO!' ? '56px' : '72px',
+          fontFamily: 'Arial Black', color: s.color,
+          stroke: '#000000', strokeThickness: 8,
+        }).setOrigin(0.5).setDepth(50).setScale(1.5).setAlpha(0);
+        this.tweens.add({
+          targets: t, alpha: 1, scaleX: 1, scaleY: 1, duration: 160, ease: 'Back.easeOut',
+          onComplete: () => this.time.delayedCall(s.label === 'GO!' ? 250 : 380, () => {
+            this.tweens.add({ targets: t, alpha: 0, scaleX: 1.6, scaleY: 1.6, duration: 150,
+              onComplete: () => { t.destroy(); next(); }
+            });
+          })
+        });
+      };
+      next();
+    }
+
+    // ----- Mid-round property swap -----
+    swapObjectProperties() {
+      const targets = this.gameObjects.filter(() => Math.random() < 0.45);
+      if (targets.length === 0) return;
+      this.showFloatingText(this.W / 2, 300, '🔀 SWAP!', '#ff44ff');
+      targets.forEach(obj => {
+        const newColor = COLORS[Phaser.Math.Between(0, COLORS.length - 1)];
+        this.tweens.add({
+          targets: obj, scaleX: 1.4, scaleY: 1.4, duration: 120, yoyo: true,
+          onComplete: () => {
+            obj.objData.color = newColor;
+            if (obj.circleRef) obj.circleRef.setFillStyle(COLOR_HEX[newColor] || 0x888888);
+          }
+        });
+      });
+    }
+
+    // ----- Achievements -----
+    checkAchievements(prevScore) {
+      const state = { combo: this.combo, score: this.score, prevScore, roundsPlayed: this.roundsPlayed, bonusMultiplier: this.bonusMultiplier };
+      ACHIEVEMENTS.forEach(a => {
+        if (!this.triggeredAchievements.has(a.id) && a.check(state)) {
+          this.triggeredAchievements.add(a.id);
+          this.time.delayedCall(200, () => this.showAchievement(a.text, a.color));
+        }
+      });
+    }
+
+    showAchievement(text, color) {
+      // Show just above the timer bar (bottom of game area) so it never covers the rule
+      const startY = 545;
+      const endY   = 520;
+      const bg = this.add.rectangle(this.W / 2, startY, this.W * 0.78, 40, 0x000000, 0.88)
+        .setStrokeStyle(2, Phaser.Display.Color.HexStringToColor(color).color)
+        .setDepth(60).setAlpha(0);
+      const label = this.add.text(this.W / 2, startY, text, {
+        fontSize: '18px', fontFamily: 'Arial Black', color, stroke: '#000000', strokeThickness: 4
+      }).setOrigin(0.5).setDepth(61).setAlpha(0);
+      this.tweens.add({ targets: [bg, label], alpha: 1, y: endY, duration: 300, ease: 'Back.easeOut' });
+      this.time.delayedCall(1800, () => {
+        this.tweens.add({ targets: [bg, label], alpha: 0, y: endY - 20, duration: 300,
+          onComplete: () => { bg.destroy(); label.destroy(); }
+        });
+      });
+    }
+
+    // ----- Power-ups -----
+    usePowerUp(key) {
+      if (!this.canTap || this.powerUps[key] <= 0) return;
+      this.powerUps[key]--;
+      this.puBtns[key].badge.setText(this.powerUps[key].toString());
+      if (this.powerUps[key] === 0) this.puBtns[key].bg.setFillStyle(0x111122);
+
+      if (key === 'slowmo') {
+        // Slow all movement tweens for 3 seconds
+        this.tweens.timeScale = 0.25;
+        this.showFloatingText(this.W / 2, this.H * 0.45, '🐢 SLOW MO!', '#00ffff');
+        this.time.delayedCall(3000, () => { this.tweens.timeScale = 1; });
+      } else if (key === 'removeHalf') {
+        // Remove half of the wrong objects
+        const wrong = this.gameObjects.filter(o => !this.isCorrect(o.objData, this.currentRule));
+        const toRemove = wrong.slice(0, Math.ceil(wrong.length / 2));
+        toRemove.forEach(obj => {
+          const idx = this.gameObjects.indexOf(obj);
+          if (idx > -1) this.gameObjects.splice(idx, 1);
+          this.tweens.add({ targets: obj, scaleX: 0, scaleY: 0, alpha: 0, duration: 250, onComplete: () => obj.destroy() });
+        });
+        this.showFloatingText(this.W / 2, this.H * 0.45, '✂️ REMOVED!', '#ffaa00');
+      } else if (key === 'hint') {
+        // Flash correct objects briefly
+        this.gameObjects.forEach(obj => {
+          if (this.isCorrect(obj.objData, this.currentRule)) {
+            const ring = this.add.circle(obj.x, obj.y, obj.objSize / 2 + 12, 0x00ff88, 0.7).setDepth(19);
+            this.tweens.add({ targets: ring, alpha: 0, scaleX: 1.5, scaleY: 1.5, duration: 700, onComplete: () => ring.destroy() });
+          }
+        });
+        this.showFloatingText(this.W / 2, this.H * 0.45, '💡 HINT!', '#ffff00');
+      }
+    }
+
+    // Replenish one of each power-up every 5 rounds
+    replenishPowerUps() {
+      Object.keys(this.powerUps).forEach(key => {
+        this.powerUps[key] = Math.min(this.powerUps[key] + 1, 3);
+        this.puBtns[key].badge.setText(this.powerUps[key].toString());
+        this.puBtns[key].bg.setFillStyle(0x2a1050);
+      });
+    }
+
+    pauseGame() {
+      if (this.isPaused || !this.canTap) return;
+      this.isPaused = true;
+      this.canTap = false;
+      if (this.timerTween) this.timerTween.pause();
+      MUSIC.toggleMute(); // mute music while paused
+
+      const ov = this.add.container(this.W / 2, this.H / 2).setDepth(100);
+      const bg = this.add.rectangle(0, 0, this.W, this.H, 0x000000, 0.75);
+      const title = this.add.text(0, -120, '⏸ PAUSED', { fontSize: '36px', fontFamily: 'Arial Black', color: '#ffffff', stroke: '#000', strokeThickness: 4 }).setOrigin(0.5);
+
+      // Resume button
+      const resBg = this.add.rectangle(0, -30, 200, 56, 0x2244ff).setStrokeStyle(3, 0x6688ff);
+      const resTxt = this.add.text(0, -30, '▶  RESUME', { fontSize: '22px', fontFamily: 'Arial Black', color: '#ffffff' }).setOrigin(0.5);
+      resBg.setInteractive({ cursor: 'pointer' });
+      resBg.on('pointerdown', () => { ov.destroy(); this.resumeGame(); });
+
+      // Quit button
+      const quitBg = this.add.rectangle(0, 50, 200, 50, 0x333333).setStrokeStyle(2, 0x666666);
+      const quitTxt = this.add.text(0, 50, '⬅  QUIT', { fontSize: '20px', fontFamily: 'Arial Black', color: '#cccccc' }).setOrigin(0.5);
+      quitBg.setInteractive({ cursor: 'pointer' });
+      quitBg.on('pointerdown', () => {
+        MUSIC.stop();
+        this.cameras.main.fade(300, 0, 0, 0);
+        this.time.delayedCall(300, () => this.scene.start('MenuScene'));
+      });
+
+      ov.add([bg, title, resBg, resTxt, quitBg, quitTxt]);
+      this.pauseOverlay = ov;
+    }
+
+    resumeGame() {
+      this.isPaused = false;
+      this.canTap = true;
+      if (MUSIC._muted) MUSIC.toggleMute(); // unmute
+      if (this.timerTween) this.timerTween.resume();
+    }
+
+    clearObjects() {
+      this.gameObjects.forEach(obj => { this.tweens.killTweensOf(obj); obj.destroy(); });
+      this.gameObjects = [];
+    }
+
+    triggerGameOver(reason) {
+      this.canTap = false;
+      this.clearObjects();
+      if (this.chaosOverlay) { this.chaosOverlay.destroy(); this.chaosOverlay = null; }
+      const hs = parseInt(localStorage.getItem('notThatOne_hs') || '0');
+      if (this.score > hs) localStorage.setItem('notThatOne_hs', this.score);
+      // Save state for potential continue (only if score > 0 and not already continued)
+      if (this.score > 0 && !localStorage.getItem('notThatOne_continued')) {
+        this.registry.set('continueData', {
+          score: this.score,
+          level: this.level,
+          roundsPlayed: this.roundsPlayed,
+          lastWrongObj: this.lastWrongObj,
+          lastRule: this.currentRule,
+        });
+      }
+      SFX.gameOver();
+      this.cameras.main.fade(400, 0, 0, 0);
+      this.time.delayedCall(400, () => {
+        this.scene.start('GameOverScene', { score: this.score, level: this.level, reason, lastWrongObj: this.lastWrongObj, lastRule: this.currentRule });
+      });
+    }
+  }
+
+  // =====================================================
+  // HOW TO PLAY SCENE
+  // =====================================================
+  class HowToPlayScene extends Phaser.Scene {
+    constructor() { super('HowToPlayScene'); }
+
+    create() {
+      this.page = 0;
+      this.pageGroup = null;
+      this.cameras.main.fadeIn(300);
+      this.showPage(0);
+    }
+
+    showPage(n) {
+      this.page = n;
+      if (this.pageGroup) { this.pageGroup.destroy(true); }
+      this.pageGroup = this.add.container(0, 0);
+
+      const { width, height } = this.scale;
+
+      // Background
+      const bg = this.add.graphics();
+      bg.fillGradientStyle(0x1a1a2e, 0x1a1a2e, 0x16213e, 0x16213e, 1);
+      bg.fillRect(0, 0, width, height);
+      this.pageGroup.add(bg);
+
+      // Page dots indicator
+      for (let d = 0; d < 3; d++) {
+        const dot = this.add.circle(width / 2 - 16 + d * 16, height * 0.93, 5, d === n ? 0xffffff : 0x555577);
+        this.pageGroup.add(dot);
+      }
+
+      if (n === 0) {
+        // Page 1: Rule panel mockup
+        const title = this.add.text(width / 2, height * 0.12, 'HOW TO PLAY', {
+          fontSize: '32px', fontFamily: 'Arial Black', color: '#ffffff', stroke: '#ff4444', strokeThickness: 5
+        }).setOrigin(0.5);
+        this.pageGroup.add(title);
+
+        // Rule panel mockup
+        const panelBg = this.add.rectangle(width / 2, height * 0.35, width * 0.88, 110, 0x000000, 0.7).setStrokeStyle(2, 0x4455ff);
+        const ruleLabel = this.add.text(width / 2 - width * 0.38, height * 0.31, 'RULE:', {
+          fontSize: '13px', fontFamily: 'Arial', color: '#7788ff'
+        }).setOrigin(0, 0.5);
+        const ruleText = this.add.text(width / 2, height * 0.37, 'TAP NOT 🍎 apple', {
+          fontSize: '26px', fontFamily: 'Arial Black', color: '#ffffff', align: 'center'
+        }).setOrigin(0.5);
+        this.pageGroup.add([panelBg, ruleLabel, ruleText]);
+
+        const explanation = this.add.text(width / 2, height * 0.55, 'A rule appears at the top\nof the screen', {
+          fontSize: '18px', fontFamily: 'Arial', color: '#aaaaff', align: 'center', wordWrap: { width: width * 0.8 }
+        }).setOrigin(0.5);
+        this.pageGroup.add(explanation);
+
+        // Next button
+        const nextBg = this.add.rectangle(width / 2, height * 0.77, 200, 54, 0x2244ff).setStrokeStyle(3, 0x6688ff).setInteractive({ cursor: 'pointer' });
+        const nextTxt = this.add.text(width / 2, height * 0.77, 'NEXT →', { fontSize: '22px', fontFamily: 'Arial Black', color: '#ffffff' }).setOrigin(0.5);
+        nextBg.on('pointerdown', () => this.showPage(1));
+        this.pageGroup.add([nextBg, nextTxt]);
+
+      } else if (n === 1) {
+        // Page 2: Objects with rule
+        const title = this.add.text(width / 2, height * 0.10, 'HOW TO PLAY', {
+          fontSize: '28px', fontFamily: 'Arial Black', color: '#ffffff', stroke: '#ff4444', strokeThickness: 4
+        }).setOrigin(0.5);
+        this.pageGroup.add(title);
+
+        // Mini rule panel
+        const panelBg = this.add.rectangle(width / 2, height * 0.20, width * 0.88, 52, 0x000000, 0.7).setStrokeStyle(2, 0x4455ff);
+        const ruleText = this.add.text(width / 2, height * 0.20, 'TAP NOT 🍎 apple', {
+          fontSize: '18px', fontFamily: 'Arial Black', color: '#ffffff'
+        }).setOrigin(0.5);
+        this.pageGroup.add([panelBg, ruleText]);
+
+        // 4 objects: banana(yellow), apple(red), star(yellow), cat(blue)
+        const objs = [
+          { emoji: '🍌', color: 0xffdd00, correct: true,  x: width * 0.18, y: height * 0.44 },
+          { emoji: '🍎', color: 0xff3333, correct: false, x: width * 0.42, y: height * 0.44 },
+          { emoji: '⭐', color: 0xffdd00, correct: true,  x: width * 0.66, y: height * 0.44 },
+          { emoji: '🐱', color: 0x3366ff, correct: true,  x: width * 0.90, y: height * 0.44 },
+        ];
+        objs.forEach(o => {
+          const circ = this.add.circle(o.x, o.y, 36, o.color).setStrokeStyle(3, 0xffffff, 0.7);
+          const em = this.add.text(o.x, o.y + 2, o.emoji, { fontSize: '28px' }).setOrigin(0.5);
+          const mark = this.add.text(o.x, o.y - 44, o.correct ? '✓' : '✗', {
+            fontSize: '28px', fontFamily: 'Arial Black',
+            color: o.correct ? '#00ff88' : '#ff4444',
+            stroke: '#000000', strokeThickness: 4
+          }).setOrigin(0.5);
+          this.pageGroup.add([circ, em, mark]);
+        });
+
+        const explanation = this.add.text(width / 2, height * 0.63, 'Tap every object that does\nNOT match the rule', {
+          fontSize: '17px', fontFamily: 'Arial', color: '#aaaaff', align: 'center', wordWrap: { width: width * 0.8 }
+        }).setOrigin(0.5);
+        this.pageGroup.add(explanation);
+
+        // Back button
+        const backBg = this.add.rectangle(width * 0.25, height * 0.77, 140, 48, 0x333333).setStrokeStyle(2, 0x666666).setInteractive({ cursor: 'pointer' });
+        const backTxt = this.add.text(width * 0.25, height * 0.77, '← BACK', { fontSize: '18px', fontFamily: 'Arial Black', color: '#cccccc' }).setOrigin(0.5);
+        backBg.on('pointerdown', () => this.showPage(0));
+        this.pageGroup.add([backBg, backTxt]);
+
+        // Next button
+        const nextBg = this.add.rectangle(width * 0.72, height * 0.77, 160, 48, 0x2244ff).setStrokeStyle(2, 0x6688ff).setInteractive({ cursor: 'pointer' });
+        const nextTxt = this.add.text(width * 0.72, height * 0.77, 'NEXT →', { fontSize: '18px', fontFamily: 'Arial Black', color: '#ffffff' }).setOrigin(0.5);
+        nextBg.on('pointerdown', () => this.showPage(2));
+        this.pageGroup.add([nextBg, nextTxt]);
+
+      } else if (n === 2) {
+        // Page 3: Combos and game over info
+        const title = this.add.text(width / 2, height * 0.10, 'HOW TO PLAY', {
+          fontSize: '28px', fontFamily: 'Arial Black', color: '#ffffff', stroke: '#ff4444', strokeThickness: 4
+        }).setOrigin(0.5);
+        this.pageGroup.add(title);
+
+        // Combo animation mockup
+        const comboBg = this.add.rectangle(width / 2, height * 0.30, width * 0.75, 90, 0x000000, 0.5).setStrokeStyle(2, 0xff8800);
+        const comboTxt = this.add.text(width / 2, height * 0.28, '🔥 x2 COMBO', {
+          fontSize: '28px', fontFamily: 'Arial Black', color: '#ffdd00', stroke: '#000000', strokeThickness: 4
+        }).setOrigin(0.5);
+        const bonusTxt = this.add.text(width / 2 + 40, height * 0.35, '+200', {
+          fontSize: '26px', fontFamily: 'Arial Black', color: '#00ff88', stroke: '#000000', strokeThickness: 3
+        }).setOrigin(0.5);
+        this.tweens.add({ targets: bonusTxt, y: height * 0.35 - 20, alpha: 0.4, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+        this.pageGroup.add([comboBg, comboTxt, bonusTxt]);
+
+        const explanation = this.add.text(width / 2, height * 0.55, 'Clear all correct objects.\nBuild combos for bonus points!\nWatch out — tapping the wrong\none ends the game!', {
+          fontSize: '16px', fontFamily: 'Arial', color: '#aaaaff', align: 'center', wordWrap: { width: width * 0.82 }
+        }).setOrigin(0.5);
+        this.pageGroup.add(explanation);
+
+        // Back button
+        const backBg = this.add.rectangle(width * 0.25, height * 0.77, 140, 48, 0x333333).setStrokeStyle(2, 0x666666).setInteractive({ cursor: 'pointer' });
+        const backTxt = this.add.text(width * 0.25, height * 0.77, '← BACK', { fontSize: '18px', fontFamily: 'Arial Black', color: '#cccccc' }).setOrigin(0.5);
+        backBg.on('pointerdown', () => this.showPage(1));
+        this.pageGroup.add([backBg, backTxt]);
+
+        // Play Now button
+        const playBg = this.add.rectangle(width * 0.68, height * 0.77, 180, 54, 0x226622).setStrokeStyle(3, 0x44ff44).setInteractive({ cursor: 'pointer' });
+        const playTxt = this.add.text(width * 0.68, height * 0.77, 'PLAY NOW! ▶', { fontSize: '18px', fontFamily: 'Arial Black', color: '#ffffff' }).setOrigin(0.5);
+        playBg.on('pointerdown', () => {
+          localStorage.setItem('notThatOne_seen', '1');
+          MUSIC.start();
+          this.cameras.main.fade(300, 0, 0, 0);
+          this.time.delayedCall(300, () => this.scene.start('GameScene'));
+        });
+        this.pageGroup.add([playBg, playTxt]);
+      }
+    }
+  }
+
+  // =====================================================
+  // GAME OVER SCENE
+  // =====================================================
+  // =====================================================
+  // LEADERBOARD SCENE
+  // =====================================================
+  class LeaderboardScene extends Phaser.Scene {
+    constructor() { super('LeaderboardScene'); }
+
+    create() {
+      const { width, height } = this.scale;
+      this.cameras.main.fadeIn(300);
+
+      // Background
+      const bg = this.add.graphics();
+      bg.fillGradientStyle(0x1a1a2e, 0x1a1a2e, 0x0a0a1e, 0x0a0a1e, 1);
+      bg.fillRect(0, 0, width, height);
+
+      // Stars
+      for (let i = 0; i < 40; i++) {
+        const s = this.add.circle(Phaser.Math.Between(0, width), Phaser.Math.Between(0, height), Phaser.Math.Between(1, 2), 0xffffff, Phaser.Math.FloatBetween(0.2, 0.7));
+        this.tweens.add({ targets: s, alpha: 0.1, duration: Phaser.Math.Between(1000, 3000), yoyo: true, repeat: -1 });
+      }
+
+      // Title
+      this.add.text(width / 2, 52, '🏆  LEADERBOARD', {
+        fontSize: '28px', fontFamily: 'Arial Black', color: '#ffdd00',
+        stroke: '#000000', strokeThickness: 4
+      }).setOrigin(0.5);
+
+      // Header line
+      this.add.rectangle(width / 2, 80, width * 0.9, 2, 0xffdd00, 0.4);
+
+      // Build leaderboard: fake entries + player's real score
+      const playerScore = parseInt(localStorage.getItem('notThatOne_hs') || '0');
+      const fakeNames = [
+        'TapMaster99', 'QuickFingers', 'NeuralNinja', 'ClickerPro',
+        'ZeroMistake', 'BrainStorm_X', 'SwipeQueen', 'TapGod2000',
+        'NotThisOne!', 'RuleBreaker',  'ComboKing',  'MindBender',
+        'FastTapper',  'LogicBomb',    'SpeedDemon',
+      ];
+      const fakeScores = [18400, 15200, 13750, 12100, 10800, 9500, 8300, 7600, 6200, 5400, 4100, 3200, 2500, 1800, 1100];
+
+      // Mix in player score
+      const entries = fakeNames.slice(0, 15).map((name, i) => ({ name, score: fakeScores[i], isPlayer: false }));
+      const playerEntry = { name: '👤 YOU', score: playerScore, isPlayer: true };
+      entries.push(playerEntry);
+      entries.sort((a, b) => b.score - a.score);
+
+      // Show top 10
+      const top10 = entries.slice(0, 10);
+      const medals = ['🥇', '🥈', '🥉'];
+      const startY = 110;
+      const rowH   = 52;
+
+      top10.forEach((entry, i) => {
+        const y       = startY + i * rowH;
+        const isTop3  = i < 3;
+        const rowAlpha = entry.isPlayer ? 1 : 0.9;
+
+        // Row background
+        const rowBg = this.add.rectangle(width / 2, y + rowH / 2 - 4, width - 8, rowH - 4,
+          entry.isPlayer ? 0x223366 : (i % 2 === 0 ? 0x111133 : 0x0d0d22), rowAlpha
+        );
+        if (entry.isPlayer) rowBg.setStrokeStyle(2, 0x4488ff, 1);
+
+        // Rank
+        const rankTxt = isTop3 ? medals[i] : `${i + 1}.`;
+        this.add.text(30, y + rowH / 2 - 4, rankTxt, {
+          fontSize: isTop3 ? '20px' : '16px', fontFamily: 'Arial Black',
+          color: entry.isPlayer ? '#88aaff' : '#aaaaaa'
+        }).setOrigin(0.5);
+
+        // Name
+        this.add.text(52, y + rowH / 2 - 4, entry.name, {
+          fontSize: '16px', fontFamily: entry.isPlayer ? 'Arial Black' : 'Arial',
+          color: entry.isPlayer ? '#ffffff' : '#cccccc'
+        }).setOrigin(0, 0.5);
+
+        // Score
+        this.add.text(width - 20, y + rowH / 2 - 4, entry.score.toLocaleString(), {
+          fontSize: '17px', fontFamily: 'Arial Black',
+          color: entry.isPlayer ? '#ffdd00' : (isTop3 ? '#ffaa44' : '#aaaaaa')
+        }).setOrigin(1, 0.5);
+      });
+
+      // Player not in top 10 — show at bottom
+      const playerRank = entries.findIndex(e => e.isPlayer) + 1;
+      if (playerRank > 10) {
+        this.add.rectangle(width / 2, startY + 10 * rowH + 16, width - 8, rowH - 4, 0x223366).setStrokeStyle(2, 0x4488ff, 1);
+        this.add.text(30,          startY + 10 * rowH + 16, `${playerRank}.`, { fontSize: '16px', fontFamily: 'Arial Black', color: '#88aaff' }).setOrigin(0.5);
+        this.add.text(52,          startY + 10 * rowH + 16, '👤 YOU',          { fontSize: '16px', fontFamily: 'Arial Black', color: '#ffffff' }).setOrigin(0, 0.5);
+        this.add.text(width - 20,  startY + 10 * rowH + 16, playerScore.toLocaleString(), { fontSize: '17px', fontFamily: 'Arial Black', color: '#ffdd00' }).setOrigin(1, 0.5);
+        this.add.text(width / 2,   startY + 10 * rowH + 38, `— ${playerRank - 10} places from top 10 —`, { fontSize: '12px', fontFamily: 'Arial', color: '#666699' }).setOrigin(0.5);
+      }
+
+      // Back button
+      const btn = this.add.container(width / 2, height - 38);
+      const bbg = this.add.rectangle(0, 0, 180, 48, 0x333355).setStrokeStyle(2, 0x6666aa);
+      const btxt = this.add.text(0, 0, '⬅  BACK', { fontSize: '20px', fontFamily: 'Arial Black', color: '#ccccff' }).setOrigin(0.5);
+      btn.add([bbg, btxt]); btn.setSize(180, 48); btn.setInteractive({ cursor: 'pointer' });
+      btn.on('pointerover', () => bbg.setFillStyle(0x4444aa));
+      btn.on('pointerout',  () => bbg.setFillStyle(0x333355));
+      btn.on('pointerdown', () => {
+        this.cameras.main.fade(250, 0, 0, 0);
+        this.time.delayedCall(250, () => this.scene.start('MenuScene'));
+      });
+    }
+  }
+
+  class GameOverScene extends Phaser.Scene {
+    constructor() { super('GameOverScene'); }
+
+    create(data) {
+      const { width, height } = this.scale;
+      this.cameras.main.fadeIn(300);
+
+      const bg = this.add.graphics();
+      bg.fillGradientStyle(0x1a0a1e, 0x1a0a1e, 0x0a0a2e, 0x0a0a2e, 1);
+      bg.fillRect(0, 0, width, height);
+
+      this.add.text(width / 2, height * 0.14, data.reason || 'Game Over!', {
+        fontSize: '30px', fontFamily: 'Arial Black', color: '#ff4444',
+        stroke: '#000000', strokeThickness: 4
+      }).setOrigin(0.5);
+
+      // Wrong object feedback
+      if (data.lastWrongObj && data.lastRule) {
+        this.add.text(width / 2, height * 0.23,
+          `You tapped the ${data.lastWrongObj.type}  •  Rule: ${data.lastRule.text}`,
+          { fontSize: '14px', fontFamily: 'Arial', color: '#ff9999', align: 'center', wordWrap: { width: width * 0.85 } }
+        ).setOrigin(0.5);
+      }
+
+      this.add.text(width / 2, height * 0.30, 'SCORE', { fontSize: '16px', fontFamily: 'Arial', color: '#aaaaaa' }).setOrigin(0.5);
+
+      const scoreText = this.add.text(width / 2, height * 0.40, '0', {
+        fontSize: '78px', fontFamily: 'Arial Black', color: '#ffffff'
+      }).setOrigin(0.5);
+
+      // Animated score count-up
+      const target = data.score || 0;
+      const step   = Math.max(1, Math.floor(target / 28));
+      let count    = 0;
+      const counter = this.time.addEvent({
+        delay: 30, repeat: 31,
+        callback: () => {
+          count = Math.min(count + step, target);
+          scoreText.setText(count.toString());
+          if (count >= target) counter.destroy();
+        }
+      });
+
+      // Highscore
+      const hs   = parseInt(localStorage.getItem('notThatOne_hs') || '0');
+      const isHS = data.score > 0 && data.score >= hs;
+      if (isHS) {
+        const hsTxt = this.add.text(width / 2, height * 0.56, '🏆 NY REKORD!', { fontSize: '26px', fontFamily: 'Arial Black', color: '#ffdd00' }).setOrigin(0.5);
+        this.tweens.add({ targets: hsTxt, scaleX: 1.12, scaleY: 1.12, duration: 500, yoyo: true, repeat: -1 });
+      } else {
+        this.add.text(width / 2, height * 0.56, `Best: ${hs}`, { fontSize: '19px', fontFamily: 'Arial', color: '#aaaaaa' }).setOrigin(0.5);
+      }
+
+      this.add.text(width / 2, height * 0.61, `Level reached: ${data.level || 1}`, { fontSize: '19px', fontFamily: 'Arial', color: '#aaddff' }).setOrigin(0.5);
+
+      const canContinue = data.score > 0 && !localStorage.getItem('notThatOne_continued');
+
+      if (canContinue) {
+        const contY = height * 0.71;
+        let secs = 5;
+
+        // Use container so entire area (bg + text) is clickable
+        const cont = this.add.container(width / 2, contY);
+        const bg   = this.add.rectangle(0, 0, 250, 58, 0x226622).setStrokeStyle(3, 0x44ff44);
+        const txt  = this.add.text(0, -7, '▶  CONTINUE (FREE)', { fontSize: '18px', fontFamily: 'Arial Black', color: '#ffffff' }).setOrigin(0.5);
+        const cdTxt = this.add.text(0, 14, `Available for ${secs}s...`, { fontSize: '11px', fontFamily: 'Arial', color: '#88ff88' }).setOrigin(0.5);
+        cont.add([bg, txt, cdTxt]);
+        cont.setSize(250, 58);
+        cont.setInteractive({ cursor: 'pointer' });
+
+        const tick = this.time.addEvent({
+          delay: 1000, repeat: 5,
+          callback: () => {
+            secs--;
+            if (secs <= 0) {
+              cdTxt.setText('Expired');
+              bg.setFillStyle(0x333333);
+              cont.removeInteractive();
+            } else {
+              cdTxt.setText(`Available for ${secs}s...`);
+            }
+          }
+        });
+
+        cont.on('pointerover', () => { if (secs > 0) bg.setFillStyle(0x338833); });
+        cont.on('pointerout',  () => { if (secs > 0) bg.setFillStyle(0x226622); });
+        cont.on('pointerdown', () => {
+          if (secs <= 0) return;
+          localStorage.setItem('notThatOne_continued', '1');
+          tick.destroy();
+          this.cameras.main.fade(300, 0, 0, 0);
+          this.time.delayedCall(300, () => this.scene.start('GameScene'));
+        });
+      }
+
+      const playY = canContinue ? height * 0.82 : height * 0.76;
+      const menuY = canContinue ? height * 0.92 : height * 0.88;
+
+      // Play again button
+      this.makeButton(width / 2, playY, '🔄  PLAY AGAIN', 0x2244ff, 0x6688ff, () => {
+        localStorage.removeItem('notThatOne_continued');
+        this.cameras.main.fade(280, 0, 0, 0);
+        this.time.delayedCall(280, () => this.scene.start('GameScene'));
+      });
+
+      this.makeButton(width / 2, menuY, '⬅  MENU', 0x333333, 0x666666, () => {
+        localStorage.removeItem('notThatOne_continued');
+        MUSIC.stop();
+        this.cameras.main.fade(280, 0, 0, 0);
+        this.time.delayedCall(280, () => this.scene.start('MenuScene'));
+      });
+    }
+
+    makeButton(x, y, label, fill, stroke, callback) {
+      const btn    = this.add.container(x, y);
+      const btnBg  = this.add.rectangle(0, 0, 220, 56, fill).setStrokeStyle(3, stroke);
+      const btnTxt = this.add.text(0, 0, label, { fontSize: '22px', fontFamily: 'Arial Black', color: '#ffffff' }).setOrigin(0.5);
+      btn.add([btnBg, btnTxt]);
+      btn.setSize(220, 56);
+      btn.setInteractive({ cursor: 'pointer' });
+      btn.on('pointerover',  () => btn.setScale(1.06));
+      btn.on('pointerout',   () => btn.setScale(1.00));
+      btn.on('pointerdown',  callback);
+    }
+  }
+
+  // =====================================================
+  // PHASER CONFIG
+  // =====================================================
+  new Phaser.Game({
+    type: Phaser.AUTO,
+    width: 400,
+    height: 710,
+    backgroundColor: '#1a1a2e',
+    parent: document.body,
+    resolution: window.devicePixelRatio || 1,
+    scene: [BootScene, MenuScene, HowToPlayScene, LeaderboardScene, GameScene, GameOverScene],
+    scale: {
+      mode: Phaser.Scale.FIT,
+      autoCenter: Phaser.Scale.CENTER_BOTH,
+    }
+  });
+  </script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js');
+    }
+  </script>
+</body>
+</html>

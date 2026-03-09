@@ -1,0 +1,17 @@
+{
+  "name": "Not That One!",
+  "short_name": "Not That One",
+  "description": "Tap the objects that do NOT match the rule!",
+  "start_url": "./index.html",
+  "display": "fullscreen",
+  "orientation": "portrait",
+  "background_color": "#1a1a2e",
+  "theme_color": "#1a1a2e",
+  "icons": [
+    {
+      "src": "assets/objects/icon.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg"
+    }
+  ]
+}
