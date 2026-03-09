@@ -585,6 +585,7 @@
 
     // ----- Round flow -----
     startRound() {
+      this.endChaosEffects();
       this.clearObjects();
       this.canTap = false;
       this.bonusMultiplier = 1;
@@ -604,7 +605,8 @@
       const difficulty = this.getDifficulty();
       if (bonusMult)  this.bonusMultiplier = bonusMult;
 
-      const objects = this.generateObjectData(difficulty.objectCount, difficulty);
+      const extraCount = chaosMode ? 2 : 0;
+      const objects = this.generateObjectData(difficulty.objectCount + extraCount, difficulty);
       if (chaosMode) objects.forEach(o => o.movement = MOVEMENTS[Phaser.Math.Between(1, MOVEMENTS.length - 1)]);
 
       this.currentRule = this.generateRule(objects, difficulty);
@@ -645,8 +647,22 @@
 
     startChaosRound() {
       this.showRoundBanner('🌀 CHAOS ROUND!', '#ff44ff', () => {
+        // Speed up all tweens
+        this.tweens.timeScale = 1.8;
+
+        // Pulsing red/purple border overlay
+        this.chaosEdge = this.add.graphics().setDepth(6);
+        this.chaosEdge.lineStyle(10, 0xff00ff, 0.7);
+        this.chaosEdge.strokeRect(0, 0, this.W, this.H);
+        this.tweens.add({ targets: this.chaosEdge, alpha: 0.1, duration: 300, yoyo: true, repeat: -1 });
+
         this._launchRound({ chaosMode: true, timeOverride: Math.max(this.getDifficulty().timeLimit - 1500, 2500) });
       });
+    }
+
+    endChaosEffects() {
+      this.tweens.timeScale = 1;
+      if (this.chaosEdge) { this.chaosEdge.destroy(); this.chaosEdge = null; }
     }
 
     showRoundBanner(text, color, callback) {
@@ -1106,6 +1122,7 @@
     }
 
     triggerGameOver(reason) {
+      this.endChaosEffects();
       this.canTap = false;
       this.clearObjects();
       const hs = parseInt(localStorage.getItem('notThatOne_hs') || '0');
