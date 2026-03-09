@@ -395,12 +395,10 @@
       accentGfx.lineStyle(3, 0x66aaff, 0.7);
       accentGfx.strokeRoundedRect(8, 6, width - 16, 96, 14);
 
-      this.add.text(20, 20, 'RULE', { fontSize: '11px', fontFamily: 'Arial Black', color: '#4466cc', letterSpacing: 3 });
-      this.roundText = this.add.text(20, height * 0.138, 'Round 1', { fontSize: '11px', fontFamily: 'Arial', color: '#445588' }).setOrigin(0, 0.5);
-      this.livesText = this.add.text(width - 14, height * 0.09, '❤️❤️❤️', { fontSize: '20px' }).setOrigin(1, 0.5);
+      this.roundText = this.add.text(width - 18, 18, 'Round 1', { fontSize: '11px', fontFamily: 'Arial', color: '#445599' }).setOrigin(1, 0);
       this.ruleText = this.add.text(width / 2, height * 0.108, '', {
         fontSize: '24px', fontFamily: 'Arial Black, sans-serif',
-        color: '#ffffff', align: 'center', wordWrap: { width: width * 0.82 },
+        color: '#ffffff', align: 'center', wordWrap: { width: width * 0.90 },
         stroke: '#000033', strokeThickness: 3
       }).setOrigin(0.5);
 
@@ -416,11 +414,11 @@
       scoreGfx.lineStyle(1, 0x223366, 0.8);
       scoreGfx.lineBetween(0, 572, width, 572);
 
-      this.scoreText = this.add.text(70, 597, '0', { fontSize: '30px', fontFamily: 'Arial Black', color: '#ffffff' }).setOrigin(0.5);
-      this.add.text(70, 618, 'SCORE', { fontSize: '10px', fontFamily: 'Arial Black', color: '#334466', letterSpacing: 2 }).setOrigin(0.5);
-      this.comboText = this.add.text(width / 2, 597, '', { fontSize: '18px', fontFamily: 'Arial Black', color: '#ffdd00' }).setOrigin(0.5);
-      this.levelText = this.add.text(width - 70, 597, 'Lv.1', { fontSize: '20px', fontFamily: 'Arial Black', color: '#88ccff' }).setOrigin(0.5);
-      this.add.text(width - 70, 618, 'LEVEL', { fontSize: '10px', fontFamily: 'Arial Black', color: '#334466', letterSpacing: 2 }).setOrigin(0.5);
+      this.scoreText = this.add.text(60, 597, '0', { fontSize: '30px', fontFamily: 'Arial Black', color: '#ffffff' }).setOrigin(0.5);
+      this.add.text(60, 618, 'SCORE', { fontSize: '10px', fontFamily: 'Arial Black', color: '#334466', letterSpacing: 2 }).setOrigin(0.5);
+      this.comboText = this.add.text(width / 2, 600, '', { fontSize: '17px', fontFamily: 'Arial Black', color: '#ffdd00' }).setOrigin(0.5);
+      this.levelText = this.add.text(width - 60, 592, 'Lv.1', { fontSize: '16px', fontFamily: 'Arial Black', color: '#88ccff' }).setOrigin(0.5);
+      this.livesText = this.add.text(width - 60, 612, '❤️❤️❤️', { fontSize: '14px' }).setOrigin(0.5);
 
       // Power-up bar
       const puGfx = this.add.graphics();
@@ -935,10 +933,7 @@
       const filled = '❤️'.repeat(Math.max(0, this.lives));
       const empty  = '🖤'.repeat(Math.max(0, 3 - this.lives));
       this.livesText.setText(filled + empty);
-      // Shake animation on life lost
-      this.tweens.add({ targets: this.livesText, x: this.livesText.x + 6, duration: 50, yoyo: true, repeat: 3, ease: 'Linear',
-        onComplete: () => { this.livesText.setX(this.W - 14); }
-      });
+      this.tweens.add({ targets: this.livesText, scaleX: 1.4, scaleY: 1.4, duration: 80, yoyo: true, repeat: 2, ease: 'Linear' });
     }
 
     // ----- Countdown -----
